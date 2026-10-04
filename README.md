@@ -15,6 +15,11 @@
   <img alt="Unofficial" src="https://img.shields.io/badge/unofficial-community%20project-555">
 </p>
 
+<p align="center">
+  <a href="docs/hermes-mobile-demo.mp4"><img src="docs/img/demo-preview.gif" alt="Watch the 2 minute demo" width="300"></a><br>
+  <a href="docs/hermes-mobile-demo.mp4"><b>▶ Watch the 2 minute demo</b></a>
+</p>
+
 > Unofficial community project. Not affiliated with or endorsed by Nous Research. Hermes itself is never patched.
 
 ## Why

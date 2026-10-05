@@ -644,7 +644,9 @@ async function main() {
   await np.locator('.conn-dot').click()
   await np.getByRole('button', { name: 'Setup check' }).click()
   await np.locator('.setup-hero-title', { hasText: '2 things to fix' }).waitFor({ timeout: 5000 }).then(() => check(true, 'native: two failing checks counted'), () => check(false, 'native: two failing checks counted'))
-  check((await np.locator('.setup-item.ok').count()) >= 6, 'native: the rest are ✓')
+  // The Hermes-side checks answer a moment later than the Android ones.
+  await np.waitForFunction(() => document.querySelectorAll('.setup-item.ok').length >= 6, null, { timeout: 6000 }).catch(() => {})
+  check((await np.locator('.setup-item.ok').count()) >= 6, `native: the rest are ✓ (${await np.locator('.setup-item.ok').count()})`)
   await np.locator('.setup-item.bad', { hasText: 'may start Hermes' }).getByRole('button', { name: 'Allow' }).click()
   await np.locator('.setup-item.bad', { hasText: 'run in the background' }).getByRole('button', { name: 'Allow' }).click()
   check(JSON.stringify(await np.evaluate(() => window.__fixes)) === '["permissions","battery-app"]', `fix buttons ask the shell (${JSON.stringify(await np.evaluate(() => window.__fixes))})`)

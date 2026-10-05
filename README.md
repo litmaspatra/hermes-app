@@ -88,78 +88,63 @@ sends status and approval events to the app's notification service.
 
 ## Setup
 
-**Time:** about 30 minutes. **You need:** an Android phone (arm64, Android 8+) and a computer (once, to install the app).
+**Time:** about 20 minutes, all on the phone. **You need:** an Android phone (arm64, Android 8+).
 
-> There is no ready-made APK yet, so you build the app yourself (step 3). Everything else is copy and paste.
-> Honest note: this was set up on the author's phone. The pieces were checked there and the installer script was tested on a dummy folder, but the whole path has not been run on a brand-new phone. If something fails, open an issue.
+> Honest note: this was set up on the author's phone. The pieces were checked there and the installer was tested on a dummy folder, but the whole path has not been run on a brand-new phone. If something fails, open an issue.
 
-### Step 1. On your phone: install Termux and Hermes
+### 1. Install Termux and Hermes
 
-1. Install **[Termux](https://f-droid.org/packages/com.termux/)** from F-Droid. (Not from the Play Store, that version is outdated.)
+1. Install **[Termux](https://f-droid.org/packages/com.termux/)** from F-Droid (not the Play Store, that version is outdated).
 2. Open Termux and paste:
 
    ```bash
-   pkg update -y && pkg install -y proot-distro git
-   proot-distro install debian
-   proot-distro login debian
+   pkg update -y && pkg install -y proot-distro && proot-distro install debian && proot-distro login debian
    ```
 
-   You are now inside Debian (the prompt changes).
-3. Install Hermes Agent there by following **[Hermes's own install guide](https://github.com/NousResearch/hermes-agent)**, then run:
+3. You are now inside Debian. Install **[Hermes Agent](https://github.com/NousResearch/hermes-agent)** with its own guide, run `hermes setup`
+   and add your model provider. When Hermes answers you, type `exit` to get back to Termux.
 
-   ```bash
-   hermes setup
-   ```
+### 2. Run the installer
 
-   and add your model provider / API key when it asks. When it works, type `exit` to leave Debian and get back to the Termux prompt.
-
-### Step 2. On your phone, in Termux: run the installer
-
-Still in Termux (not Debian), paste:
+In Termux (not Debian), paste:
 
 ```bash
-git clone https://github.com/omarqaterge/hermes-mobile-app.git ~/hermes-mobile
-bash ~/hermes-mobile/phone/install.sh
+curl -fsSL https://raw.githubusercontent.com/omarqaterge/hermes-mobile-app/main/phone/install.sh | bash
 ```
 
-It tells you what it does in 4 short lines: it allows the app to start Hermes, installs the plugin, and enables it. Safe to run again.
+It installs the Hermes plugin, lets the app start Hermes, then downloads the app and opens Android's installer: tap **Install**
+(allow Termux to install apps if Android asks). Safe to run again, also to update.
 
-### Step 3. On your computer: build and install the app
+### 3. Open Hermes Mobile
 
-1. Install **Node 20+**, **JDK 17** and the **[Android command-line tools](https://developer.android.com/studio#command-line-tools-only)**, then:
+Allow the permissions it asks for (notifications, "run commands in Termux"). It starts Hermes by itself; the first start can take a minute. Say hi.
 
-   ```bash
-   sdkmanager "platforms;android-36" "build-tools;35.0.0"
-   ```
-2. On the phone turn on **Developer options → USB debugging**, plug it in, and allow the computer.
-3. In a terminal on the computer:
+**Recommended:** set **battery to "Unrestricted"** for *Hermes Mobile* and *Termux* (on Xiaomi/HyperOS also turn on *Autostart*), or Android may kill them in the background.
 
-   ```bash
-   git clone https://github.com/omarqaterge/hermes-mobile-app.git
-   cd hermes-mobile-app
-   (cd web && npm ci)
-   export ANDROID_HOME=/path/to/your/android-sdk
-   export JAVA_HOME=/path/to/your/jdk-17
-   VERSION_NAME=1.0.0 VERSION_CODE=1 android/build.sh
-   adb install -r android/build/hermes-mobile.apk
-   ```
+<details>
+<summary><b>Build the app yourself</b> (instead of the downloaded APK)</summary>
 
-   The first build makes a signing key in `~/.android/hermes-mobile.keystore`. Keep a copy: future updates must use the same key.
+On a computer with **Node 20+**, **JDK 17** and the **[Android command-line tools](https://developer.android.com/studio#command-line-tools-only)**
+(`sdkmanager "platforms;android-36" "build-tools;35.0.0"`), with the phone plugged in and USB debugging on:
 
-### Step 4. Open the app
+```bash
+git clone https://github.com/omarqaterge/hermes-mobile-app.git && cd hermes-mobile-app
+(cd web && npm ci)
+ANDROID_HOME=/path/to/android-sdk JAVA_HOME=/path/to/jdk-17 VERSION_NAME=1.0.0 VERSION_CODE=1 android/build.sh
+adb install -r android/build/hermes-mobile.apk
+```
 
-1. Open **Hermes Mobile** and allow the permissions it asks for (notifications, and "run commands in Termux").
-2. It starts Hermes by itself and connects. The first start can take up to a minute.
-3. Say hi. Done.
+The first build makes a signing key in `~/.android/hermes-mobile.keystore`. A self-built app can't be updated with the downloaded one (different key): uninstall it first.
 
-**Recommended:** in Android settings set **battery to "Unrestricted"** for both *Hermes Mobile* and *Termux*, and on Xiaomi/HyperOS also turn on *Autostart*. Otherwise Android may kill them in the background.
+</details>
 
 ### If something goes wrong
 
 | What you see | Fix |
 |---|---|
 | "Hermes is offline" for more than a minute | Open Termux, run `~/bin/hermes-services`, go back to the app and tap Reconnect |
-| Installer says "Debian is not installed" or "Hermes is not set up" | Finish Step 1 first |
+| Installer says "Debian is not installed" or "Hermes is not set up" | Finish step 1 first |
+| Installer says no ready-made app was found | Build it yourself (see above) |
 | No status chip / canvas / approvals | In Termux run `proot-distro login debian -- hermes plugins list` and check `hermes-mobile` says *enabled* (or re-run the installer) |
 | The app can't start Hermes | In Termux run `grep allow-external ~/.termux/termux.properties`, it must say `true`. Re-run the installer, then restart Termux |
 | Everything stops after a while | Battery is restricted: see the recommended settings above |

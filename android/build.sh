@@ -1,6 +1,6 @@
 #!/bin/bash
 # Build the Hermes phone app without Gradle: aapt2 + javac + d8 + zipalign + apksigner.
-# Output: build/hermes-mobile.apk (signed with a local key in ~/.android/hermes-mobile.keystore).
+# Output: build/hermes-mobile.apk (signed with a local key in ~/.android/hermes-mobile.keystore, or $KEYSTORE).
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -13,7 +13,7 @@ BT="$SDK/build-tools/35.0.0"
 ANDROID_JAR="$SDK/platforms/android-$COMPILE_PLATFORM/android.jar"
 VERSION_NAME="${VERSION_NAME:-0.1.0}"
 VERSION_CODE="${VERSION_CODE:-1}"
-KS="$HOME/.android/hermes-mobile.keystore"
+KS="${KEYSTORE:-$HOME/.android/hermes-mobile.keystore}"  # CI passes the release key here
 
 [ -f "$ANDROID_JAR" ] || { echo "missing $ANDROID_JAR (sdkmanager \"platforms;android-$COMPILE_PLATFORM\")"; exit 1; }
 [ -x "$BT/aapt2" ] || { echo "missing build-tools 35.0.0"; exit 1; }

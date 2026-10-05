@@ -154,3 +154,41 @@ describe('memoryDiff', () => {
     expect(memoryDiff({ action: 'read' }, '')).toBeUndefined()
   })
 })
+
+import { foldMap, runLabel, toolRuns } from './fold'
+import type { ChatItem } from './store'
+
+describe('tool runs', () => {
+  const tool = (id: string, status: 'done' | 'running' | 'error' = 'done', duration = 2): ChatItem => ({ kind: 'tool', id, name: id[0] === 'r' ? 'read_file' : 'terminal', status, duration })
+  const think = (id: string): ChatItem => ({ kind: 'assistant', id, text: '', reasoning: 'hmm', streaming: false })
+  const say = (id: string, text = 'hi'): ChatItem => ({ kind: 'assistant', id, text, reasoning: '', streaming: false })
+  const user: ChatItem = { kind: 'user', id: 'u', text: 'go' }
+
+  test('folds 3+ calls with reasoning between them, not 2', () => {
+    const items = [user, tool('t1'), think('k1'), tool('r2'), tool('t3'), think('k2'), say('a')]
+    const runs = toolRuns(items)
+    expect(runs).toHaveLength(1)
+    expect(runs[0]).toMatchObject({ start: 1, end: 5, tools: 3, secs: 6, names: ['terminal', 'read_file'] })
+    expect(toolRuns([user, tool('t1'), tool('t2'), say('a')])).toHaveLength(0)
+    expect(runLabel(runs[0])).toBe('Ran 3 tools · 6s')
+  })
+
+  test('hides all but the header when closed, nothing when open', () => {
+    const items = [user, tool('t1'), tool('t2'), tool('t3'), say('a')]
+    const m = foldMap(items, new Set())
+    expect(m.get(1)).toMatchObject({ open: false, hidden: true })
+    expect(m.get(2)).toEqual({ hidden: true })
+    expect(m.get(4)).toBeUndefined()
+    const o = foldMap(items, new Set(['t1']))
+    expect(o.get(1)).toMatchObject({ open: true, hidden: false })
+    expect(o.has(2)).toBe(false)
+  })
+
+  test('keeps the live call visible while the run works', () => {
+    const items = [user, tool('t1'), tool('t2'), tool('t3', 'running')]
+    const m = foldMap(items, new Set())
+    expect(runLabel(toolRuns(items)[0])).toBe('Running 3 tools…')
+    expect(m.get(2)).toEqual({ hidden: true })
+    expect(m.has(3)).toBe(false)
+  })
+})

@@ -751,6 +751,7 @@ function Hub({ go }: { go: (p: Page) => void }) {
       <Section title="Connection">
         <Row icon="📶" tone="green" title="Status" value={connLabel} chevron onClick={() => setState({ sheet: 'status' })} />
         <Row icon="↻" tone="blue" title="Reconnect / start Hermes" onClick={() => { reconnectNow(); toast('Reconnecting…') }} />
+        <Row icon="✓" tone="teal" title="Setup check" sub="Permissions, background running, the plugin" chevron onClick={() => setState({ screen: 'setup' })} />
       </Section>
       <Section title="About">
         <Row title="App" value={appVersion()} />

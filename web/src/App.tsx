@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { compressChat, connect, errText, fmtCtx, newSession, openSessionFromNotification, reconnectNow } from './gateway'
-import { getState, setState, toast, useStore, type ChatItem, type Todo } from './store'
-import { ItemView } from './components/ChatItems'
+import { closeScreen, getState, setState, toast, useStore, type ChatItem, type Todo } from './store'
+import { ItemView, ToolRunHead } from './components/ChatItems'
+import { foldMap } from './fold'
 import { Composer } from './components/Composer'
 import { TtsPlayer } from './components/TtsPlayer'
 import { Drawer } from './components/Drawer'
@@ -21,8 +22,9 @@ import { Title, plainTitle } from './components/Title'
 import { useAutoRead, useDraftAutoRead } from './voice'
 import { dotState, startHealthPolling, checkHealth } from './health'
 import { SettingsScreen } from './components/Settings'
+import { SetupScreen, watchFirstRun } from './components/Setup'
 import { BotsScreen } from './components/Bots'
-import { CronScreen, FilesScreen, MemoryScreen, ProjectsScreen, SkillsScreen } from './components/Screens'
+import { CronScreen, FilesScreen, HubScreen, MemoryScreen, ProjectsScreen, SkillsScreen } from './components/Screens'
 
 declare global {
   interface Window {
@@ -45,7 +47,7 @@ window.hermesBack = () => {
     return true
   }
   if (s.screen) {
-    setState({ screen: null })
+    closeScreen()
     return true
   }
   return false
@@ -65,6 +67,7 @@ function Header() {
   const draftReading = useDraftAutoRead()
   const reading = hasActive ? chatReading : draftReading
   const canvasDocs = useCanvas(c => c.docs.length)
+  const canvasWriting = useCanvas(c => Boolean(c.writing))
   const unread = useStore(s => s.unread.length > 0)
   return (
     <header className="topbar">
@@ -91,8 +94,8 @@ function Header() {
       </button>
       {(
         <button
-          className="icon-btn canvas-btn"
-          aria-label="Canvas"
+          className={`icon-btn canvas-btn${canvasWriting ? ' writing' : ''}`}
+          aria-label={canvasWriting ? 'Canvas (Hermes is writing)' : 'Canvas'}
           onClick={() => {
             // The canvas belongs to a chat: on the empty screen, start the chat first.
             if (hasActive) openCanvas()
@@ -140,6 +143,11 @@ function ConnBanner() {
         {secs >= 3 ? ` · ${secs}s` : ''}
         {secs >= 20 ? ' · taking long' : ''}
       </span>
+      {secs >= 10 && (
+        <button className="mini" onClick={() => setState({ screen: 'setup' })}>
+          Check setup
+        </button>
+      )}
       <button className="mini" onClick={() => reconnectNow()}>
         {secs >= 20 ? 'Restart Hermes' : 'Retry'}
       </button>
@@ -367,6 +375,29 @@ function Chat({ onPick }: { onPick: (t: string) => void }) {
     start = Math.max(0, count - WINDOW)
     setWin({ key: sessionKey, start })
   }
+  // Runs of tool calls fold into one line; tapping it opens them (keyed by the run's first item id).
+  const [openRuns, setOpenRuns] = useState<ReadonlySet<string>>(() => new Set())
+  const folds = useMemo(() => foldMap(items ?? [], openRuns), [items, openRuns])
+  const toggleRun = useCallback((id: string) => {
+    setOpenRuns(o => {
+      const n = new Set(o)
+      if (!n.delete(id)) n.add(id)
+      return n
+    })
+  }, [])
+  /** A search hit inside a folded run: open the run first (its first item id), true if that was needed. */
+  const unfold = (idx: number): boolean => {
+    const f = folds.get(idx)
+    if (!f || !f.hidden || !items) return false
+    for (let k = idx; k >= 0; k--) {
+      const h = folds.get(k)
+      if (h && 'head' in h) {
+        toggleRun(items[k].id)
+        return true
+      }
+    }
+    return false
+  }
   const topSentinel = useRef<HTMLDivElement>(null)
   const anchor = useRef<{ node: Element; top: number } | null>(null)
   useEffect(() => {
@@ -400,6 +431,7 @@ function Chat({ onPick }: { onPick: (t: string) => void }) {
       setWin({ key: sessionKey, start: Math.max(0, idx - 3) })
       return // runs again once it is drawn
     }
+    if (unfold(idx)) return // runs again once it is drawn
     setState({ jump: null })
     const node = el.children[(start > 0 ? 1 : 0) + idx - start]
     if (!node) return
@@ -409,7 +441,7 @@ function Chat({ onPick }: { onPick: (t: string) => void }) {
     const unmark = highlightWords(node, jump.terms)
     setTimeout(() => node.classList.remove('hit-flash'), 2500)
     setTimeout(unmark, 6000)
-  }, [jump, items, sessionKey, start])
+  }, [jump, items, sessionKey, start, folds]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // In-chat search: mark every hit in the drawn messages, centre the current message (drawing earlier turns first if
   // it is above the window) and bring its first hit into view. Scrolls only when the query or the chosen match changes.
@@ -428,6 +460,7 @@ function Chat({ onPick }: { onPick: (t: string) => void }) {
       setWin({ key: sessionKey, start: Math.max(0, idx - 3) })
       return // runs again once it is drawn
     }
+    if (unfold(idx)) return // runs again once it is drawn
     const node = el.children[(start > 0 ? 1 : 0) + idx - start]
     if (!node) return
     const term = find.q.trim().toLowerCase()
@@ -446,7 +479,7 @@ function Chat({ onPick }: { onPick: (t: string) => void }) {
       unmarkAll()
       unmarkCur()
     }
-  }, [find, items, sessionKey, start])
+  }, [find, items, sessionKey, start, folds]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useLayoutEffect(() => {
     const el = scroller.current
@@ -476,10 +509,18 @@ function Chat({ onPick }: { onPick: (t: string) => void }) {
   const openingTitle = useStore(s => s.sessions.find(x => x.id === s.opening)?.title || '')
   if (opening && !previewing && (!(items && items.length) || opening !== openingActive))
     return (
-      <div className="empty opening">
-        <span className="spinner" />
-        <div className="empty-title">Opening your chat…</div>
-        <div className="dim">{conn === 'open' ? openingTitle || 'Loading the conversation' : 'Connecting to Hermes…'}</div>
+      <div className="chat chat-skeleton" role="status" aria-label="Opening your chat">
+        <div className="skeleton-label dim">
+          <span className="spinner small" /> {conn === 'open' ? plainTitle(openingTitle) || 'Opening your chat…' : 'Connecting to Hermes…'}
+        </div>
+        {/* The rough shape of a conversation while it loads, instead of a lone spinner. */}
+        {[['user', 46], ['assistant', 88, 72, 54], ['user', 30], ['assistant', 80, 64]].map(([who, ...ws], i) => (
+          <div key={i} className={`skeleton-msg ${who}`} style={who === 'user' ? { width: `${(ws as number[])[0] + 20}%` } : undefined} aria-hidden="true">
+            {(ws as number[]).map((w, j) => (
+              <span key={j} style={{ width: `${w}%`, animationDelay: `${(i * 3 + j) * 0.08}s` }} />
+            ))}
+          </div>
+        ))}
       </div>
     )
   if (!items || items.length === 0) return <Empty onPick={onPick} />
@@ -500,13 +541,24 @@ function Chat({ onPick }: { onPick: (t: string) => void }) {
           <span className="spinner" /> Earlier messages…
         </div>
       )}
-      {items.slice(start).map((it, i) => (
-        <ItemView key={it.id} item={it} actions={!previewing && hasActions(items, start + i)} busy={running || previewing} />
-      ))}
+      {items.slice(start).map((it, i) => {
+        // One element per item, also when folded: search and jump find messages by child index.
+        const f = folds.get(start + i)
+        const view = <ItemView key={it.id} item={it} actions={!previewing && hasActions(items, start + i)} busy={running || previewing} />
+        if (!f) return view
+        if (!('head' in f)) return <div key={it.id} className="folded" />
+        return (
+          <div key={it.id} className="tool-run-wrap">
+            <ToolRunHead id={it.id} run={f.head} open={f.open} onToggle={toggleRun} />
+            {!f.hidden && <ItemView item={it} actions={false} busy={running || previewing} />}
+          </div>
+        )
+      })}
       <div className="chat-pad" />
       {showJump && (
         <button
           className="jump"
+          aria-label="Scroll to the newest message"
           onClick={() => {
             const el = scroller.current
             if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
@@ -535,6 +587,11 @@ export function App() {
   useEffect(() => installSwipeToDrawer(), [])
 
   const conn = useStore(s => s.conn)
+  useEffect(() => {
+    // Leaving the screens for the chat (a skill used, a chat opened…) forgets the way back to the hub.
+    if (!screen && getState().screenBack) setState({ screenBack: null })
+  }, [screen])
+  useEffect(() => watchFirstRun(conn, () => setState({ screen: 'setup' })), [conn])
   useEffect(() => {
     // Health poll starts once connected; each reconnect re-checks so the dot is current.
     if (conn !== 'open') return
@@ -566,6 +623,8 @@ export function App() {
       {screen === 'projects' && <ProjectsScreen />}
       {screen === 'bots' && <BotsScreen />}
       {screen === 'settings' && <SettingsScreen key={screenKey} />}
+      {screen === 'setup' && <SetupScreen />}
+      {screen === 'hub' && <HubScreen />}
       <Drawer />
       {sheet === 'model' && <ModelSheet />}
       {sheet === 'commands' && (

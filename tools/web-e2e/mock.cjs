@@ -24,6 +24,7 @@ allSessions.unshift({ id: 's-run', title: 'Running chat', preview: 'x', message_
 const canvasDocs = {} // session -> [doc]
 let activityItems = []
 let refuseUntil = 0
+let pluginEnabled = false
 
 const server = http.createServer((req, res) => {
   let body = ''
@@ -77,6 +78,16 @@ const server = http.createServer((req, res) => {
     if (p === '/api/plugins/hermes-mobile/prefs') return send({ order: null })
     if (p === '/api/plugins/hermes-mobile/cleanup') return send({ ok: true, removed: [], freed_bytes: 0 })
     if (p === '/api/model/info') return send({ model: 'mock-model' })
+    if (p === '/api/dashboard/plugins') return send([{ name: 'hermes-mobile' }, { name: 'kanban' }])
+    if (p === '/api/config' && req.method === 'GET') return send({ plugins: { enabled: pluginEnabled ? ['other', 'hermes-mobile'] : ['other'] } })
+    if (p === '/api/config' && req.method === 'PUT') {
+      const b = JSON.parse(body || '{}')
+      pluginEnabled = (b.config?.plugins?.enabled || []).includes('hermes-mobile')
+      return send({ ok: true })
+    }
+    if (p === '/api/skills') return send([{ name: 'a', enabled: true }, { name: 'b', enabled: true }, { name: 'c', enabled: false }])
+    if (p === '/api/plugins/hermes-mobile/memory')
+      return send({ memory: { target: 'memory', entries: ['x', 'y'], used: 1100, limit: 2200 }, user: { target: 'user', entries: ['z'], used: 10, limit: 1375 } })
     if (p === '/api/status') return send({ version: '0.21.5', components: { dashboard: { status: 'ok' } } })
     if (p === '/api/plugins/hermes-mobile/canvas') {
       const s = url.searchParams.get('session')
@@ -188,6 +199,32 @@ wss.on('connection', ws => {
         if (/^ask me$/.test(params.text)) {
           // Hermes asks a question (clarify, a server → client request) and waits.
           later(100, () => ws.send(JSON.stringify({ jsonrpc: '2.0', id: 'srv-clarify-1', method: 'clarify', params: { session_id: sid, question: 'Which colour?', choices: ['Red', 'Blue'] } })))
+          return
+        }
+        if (/^use tools$/.test(params.text)) {
+          // Four tool calls (with reasoning between two of them), then the answer: the app folds them into one line.
+          let t = 50
+          for (const [i, name] of ['terminal', 'read_file', 'search_files', 'terminal'].entries()) {
+            later((t += 40), () => event('tool.start', sid, { tool_id: `call_${i}`, name, context: `step ${i}`, args: { command: `echo ${i}` } }))
+            later((t += 40), () => event('tool.complete', sid, { tool_id: `call_${i}`, name, duration_s: 1.5, result_text: `out ${i}` }))
+            if (i === 1) later((t += 20), () => event('reasoning.delta', sid, { text: 'thinking between calls' }))
+          }
+          later((t += 60), () => event('message.start', sid, {}))
+          later((t += 40), () => event('message.complete', sid, { text: 'All four done.' }))
+          return
+        }
+        if (/^write canvas$/.test(params.text)) {
+          // A plugin tool streams under the generic name for a while (the model writing a big document), then runs.
+          later(50, () => event('tool.generating', sid, { name: 'tool_call' }))
+          later(2600, () => event('tool.start', sid, { tool_id: 'call_cv', name: 'canvas', args: { action: 'create', title: 'Plan', content: '# Plan\n\nStep one' } }))
+          later(3600, () => {
+            const stored = sid.replace(/^rt-/, '')
+            const d = { id: 'dplan', title: 'Plan', type: 'markdown', lang: '', rev: 1, updated: Date.now() / 1000, by: 'agent', chars: 18, path: '', created: Date.now() / 1000, content: '# Plan\n\nStep one' }
+            ;(canvasDocs[stored] ||= []).push(d)
+            event('tool.complete', sid, { tool_id: 'call_cv', name: 'canvas', duration_s: 0.1, args: { action: 'create' }, result_text: JSON.stringify({ ok: true, id: 'dplan', shown: true }) })
+          })
+          later(3800, () => event('message.start', sid, {}))
+          later(3900, () => event('message.complete', sid, { text: 'Wrote the plan.' }))
           return
         }
         if (/^show diagram$/.test(params.text)) {

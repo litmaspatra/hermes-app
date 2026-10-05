@@ -106,7 +106,7 @@ export interface Ctx {
 
 export type Sheet = null | 'model' | 'commands' | 'session-actions' | 'chat-menu' | 'draft-menu' | 'status' | 'rollback'
 
-export type Screen = null | 'skills' | 'memory' | 'cron' | 'files' | 'projects' | 'settings' | 'bots'
+export type Screen = null | 'skills' | 'memory' | 'cron' | 'files' | 'projects' | 'settings' | 'bots' | 'setup' | 'hub'
 
 export interface Toast {
   id: number
@@ -132,6 +132,8 @@ export interface AppState {
   screen: Screen
   /** Profile a Settings screen opens scoped to (from a bot's page); null = the current one. */
   screenProfile: string | null
+  /** Where Back from `screen` goes (the Hermes hub opened it); null = the chat. */
+  screenBack: Screen
   toasts: Toast[]
   textScale: number
   health: import('./health').Health | null
@@ -201,6 +203,7 @@ let state: AppState = {
   sheet: null,
   screen: null,
   screenProfile: null,
+  screenBack: null,
   toasts: [],
   textScale: savedScale,
   health: null,
@@ -331,4 +334,10 @@ export function hydrate(messages: TranscriptMessage[]): ChatItem[] {
     }
   }
   return out
+}
+
+/** Close the open full screen: back to the hub when it opened it, else to the chat. */
+export function closeScreen(): void {
+  const s = getState()
+  setState({ screen: s.screen !== s.screenBack ? s.screenBack : null, screenBack: null })
 }

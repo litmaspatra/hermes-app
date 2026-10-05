@@ -26,6 +26,8 @@ interface AndroidBridge {
   sharedItem?(index: number): string
   setLastChat?(id: string, title: string): void
   shareText?(title: string, text: string): void
+  setupState?(): string
+  setupFix?(what: string): void
 }
 
 declare global {
@@ -150,6 +152,30 @@ export function haptic(): void {
   } catch {
     /* optional */
   }
+}
+
+/** Android-only facts for the setup check (null in a browser). */
+export interface NativeSetup {
+  termux: boolean
+  runCommand: boolean
+  notifications: boolean
+  batteryApp: boolean
+  batteryTermux: boolean
+  startError: string
+}
+
+export function setupState(): NativeSetup | null {
+  try {
+    const raw = native?.setupState?.()
+    return raw ? (JSON.parse(raw) as NativeSetup) : null
+  } catch {
+    return null
+  }
+}
+
+/** Open the Android screen that fixes one setup item (fixed list on the Java side). */
+export function setupFix(what: 'permissions' | 'start' | 'notifications' | 'battery-app' | 'battery-termux' | 'app-settings' | 'open-termux' | 'get-termux'): void {
+  native?.setupFix?.(what)
 }
 
 export function appVersion(): string {

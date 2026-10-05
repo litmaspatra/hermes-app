@@ -558,6 +558,61 @@ textarea {
 }
 
 /* tool cards */
+/* A folded run of tool calls (fold.ts): one line, tap to show the cards. */
+.folded {
+  display: none;
+}
+.tool-run-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.tool-run {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  min-height: 44px;
+  text-align: left;
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  color: var(--dim);
+  font-size: 0.85rem;
+}
+.tool-run:active {
+  background: var(--press);
+}
+.tool-run.running {
+  border-style: solid;
+  border-color: var(--accent);
+}
+.tool-run-icons {
+  display: inline-flex;
+  flex: none;
+}
+.tool-run-icons .tool-icon {
+  width: 18px;
+  font-size: 0.8rem;
+}
+.tool-run-label {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  color: var(--text);
+}
+.tool-run-names {
+  color: var(--dim);
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tool-run-err {
+  color: var(--err);
+}
 .tool {
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -1469,7 +1524,7 @@ textarea {
 }
 .nav-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 6px;
 }
 .nav-tile {
@@ -2559,3 +2614,365 @@ button.set-row:active, .set-row[role='presentation']:active { background: var(--
 .md .callout-quote, .md .callout-cite { --c: var(--dim); }
 
 .md svg:not(.katex svg) { max-width: 100%; }
+
+/* The chat's model, above the composer (Composer.tsx). */
+.model-row {
+  display: flex;
+  padding: 0 4px 6px;
+}
+.model-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 70%;
+  min-height: 28px;
+  padding: 2px 10px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  color: var(--dim);
+  font-size: 0.74rem;
+}
+.model-chip:active {
+  background: var(--press);
+}
+.model-chip-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--mono);
+}
+.model-chip-effort {
+  flex: none;
+  padding: 0 5px;
+  border-radius: 6px;
+  background: var(--press);
+  font-size: 0.68rem;
+}
+
+/* Setup check (Setup.tsx) */
+.setup-hero {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 14px 14px 6px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+.setup-hero.ok {
+  border-color: var(--ok);
+}
+.setup-hero.bad {
+  border-color: var(--err-border);
+}
+.setup-hero-mark {
+  flex: none;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-weight: 700;
+  font-size: 1.1rem;
+  color: var(--bg);
+  background: var(--dim);
+}
+.setup-hero.ok .setup-hero-mark {
+  background: var(--ok);
+}
+.setup-hero.bad .setup-hero-mark {
+  background: var(--err);
+}
+.setup-hero-title {
+  font-weight: 600;
+  font-size: 1.05rem;
+}
+.setup-note {
+  margin: 4px 16px;
+}
+.setup-list {
+  list-style: none;
+  margin: 8px 14px 24px;
+  padding: 0;
+  border-radius: 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+.setup-item {
+  display: flex;
+  gap: 12px;
+  padding: 12px 14px;
+  border-top: 1px solid var(--border);
+}
+.setup-item:first-child {
+  border-top: none;
+}
+.setup-mark {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+.setup-mark.ok {
+  color: var(--ok);
+  border: 1.5px solid var(--ok);
+}
+.setup-mark.bad {
+  color: var(--err);
+  border: 1.5px solid var(--err);
+}
+.setup-body {
+  flex: 1;
+  min-width: 0;
+}
+.setup-title {
+  line-height: 24px;
+}
+.setup-item.bad .setup-title {
+  font-weight: 600;
+}
+.setup-help {
+  margin-top: 4px;
+  color: var(--dim);
+  font-size: 0.86rem;
+  line-height: 1.4;
+}
+.setup-help code {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+}
+.setup-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+/* Hermes hub (Screens.tsx HubScreen) */
+.hub {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+}
+.hub-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px;
+  min-height: 68px;
+  border-radius: 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  text-align: left;
+}
+.hub-card:active {
+  background: var(--press);
+}
+.hub-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.hub-title {
+  font-weight: 600;
+}
+.hub-sub {
+  color: var(--dim);
+  font-size: 0.85rem;
+}
+.hub-meter {
+  display: block;
+  height: 4px;
+  margin-top: 6px;
+  border-radius: 2px;
+  background: var(--press);
+  overflow: hidden;
+}
+.hub-meter span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+.hub-meter span.full {
+  background: var(--err);
+}
+.hub-card .chev {
+  color: var(--dim);
+  font-size: 1.4rem;
+}
+
+/* Canvas: Hermes writing a document (canvas.ts `writing`) */
+.canvas-writing {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+}
+.canvas-writing-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  color: var(--dim);
+  font-size: 0.85rem;
+  border-bottom: 1px solid var(--border);
+}
+.canvas-writing-bar b {
+  color: var(--text);
+  font-weight: 600;
+}
+.canvas-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px 16px;
+}
+.canvas-skeleton span {
+  display: block;
+  height: 12px;
+  border-radius: 6px;
+  background: linear-gradient(90deg, var(--press) 0%, var(--border) 50%, var(--press) 100%);
+  background-size: 200% 100%;
+  animation: canvas-shimmer 1.4s ease-in-out infinite;
+}
+.canvas-skeleton span:nth-child(4) {
+  margin-bottom: 10px;
+}
+@keyframes canvas-shimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+.canvas-writing-preview {
+  margin: 0;
+  padding: 12px 14px;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--dim);
+}
+
+.canvas-btn.writing .canvas-dot,
+.canvas-btn.writing::after {
+  animation: pulse-dot 1s ease-in-out infinite;
+}
+.canvas-btn.writing::after {
+  content: '';
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--bg);
+}
+@keyframes pulse-dot {
+  50% { opacity: 0.25; }
+}
+
+/* ── Wide screens (unfolded foldables, tablets, landscape): chat list, chat and canvas side by side ── */
+@media (min-width: 840px) {
+  :root {
+    --side: 320px;
+    --canvas-w: min(46vw, 640px);
+  }
+  .drawer {
+    width: var(--side);
+    transform: none;
+    transition: none;
+    padding-top: env(safe-area-inset-top);
+  }
+  .drawer-backdrop,
+  .menu-btn {
+    display: none;
+  }
+  .app {
+    margin-left: var(--side);
+    transition: margin-right 0.22s ease;
+  }
+  .screen {
+    left: var(--side);
+  }
+  /* Keep reading lines a comfortable length. */
+  .chat {
+    padding-inline: max(16px, calc((100% - 820px) / 2));
+  }
+  .composer-wrap {
+    padding-inline: max(8px, calc((100% - 836px) / 2));
+  }
+  /* The canvas becomes the right-hand column (max stays full screen). */
+  html[data-canvas='half'] .app,
+  html[data-canvas='full'] .app {
+    margin-right: var(--canvas-w);
+  }
+  html[data-canvas='half'] .canvas-panel,
+  html[data-canvas='full'] .canvas-panel {
+    left: auto;
+    top: 0;
+    width: var(--canvas-w);
+    height: 100%;
+    border-radius: 0;
+    border-top: none;
+    border-left: 1px solid var(--border);
+    box-shadow: none;
+    padding-top: env(safe-area-inset-top);
+    animation: none;
+  }
+  html[data-canvas='half'] .canvas-grip,
+  html[data-canvas='full'] .canvas-grip {
+    display: none;
+  }
+}
+
+/* A chat loading without a cached copy: placeholder bubbles (App.tsx Chat). */
+.chat-skeleton {
+  justify-content: flex-end;
+  gap: 14px;
+}
+.skeleton-label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: auto;
+  padding-top: 28px;
+  font-size: 0.88rem;
+}
+.skeleton-msg {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.skeleton-msg.user {
+  align-self: flex-end;
+  align-items: flex-end;
+  padding: 12px 14px;
+  border-radius: 18px;
+  background: var(--surface);
+}
+.skeleton-msg.assistant {
+  width: 100%;
+  padding: 4px 2px;
+}
+.skeleton-msg span {
+  display: block;
+  height: 11px;
+  border-radius: 6px;
+  background: linear-gradient(90deg, var(--press) 0%, var(--border) 50%, var(--press) 100%);
+  background-size: 200% 100%;
+  animation: canvas-shimmer 1.4s ease-in-out infinite;
+}
+.skeleton-msg.user span {
+  width: 100% !important;
+}

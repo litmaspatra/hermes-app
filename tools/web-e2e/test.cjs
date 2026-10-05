@@ -303,6 +303,38 @@ async function main() {
   await page.locator('.composer').getByRole('button', { name: 'Send' }).click()
   await page.locator('.msg.assistant svg', { hasText: 'Start' }).first().waitFor({ timeout: 15000 }).then(() => check(true, 'diagram renders from the lazy Mermaid'), () => check(false, 'diagram renders from the lazy Mermaid'))
 
+  // ── tool calls fold into one "Ran N tools" line; tap opens them ──
+  await page.getByPlaceholder('Message Hermes').fill('use tools')
+  await page.locator('.composer').getByRole('button', { name: 'Send' }).click()
+  await page.locator('.msg.assistant', { hasText: 'All four done.' }).waitFor({ timeout: 5000 })
+  const run = page.locator('.tool-run').last()
+  check(((await run.textContent()) || '').includes('Ran 4 tools · 6s'), `one folded line for the run (${await run.textContent()})`)
+  const visibleCards = () => page.locator('.tool:visible', { hasText: /step [0-3]/ }).count()
+  check((await visibleCards()) === 0, 'its cards are hidden')
+  await run.click()
+  check((await visibleCards()) === 4, `tap shows all four (${await visibleCards()})`)
+  await run.click()
+  check((await visibleCards()) === 0, 'tap again folds them')
+
+  // ── the model Hermes reports sits above the composer; tap opens the picker ──
+  const chip = page.locator('.model-chip')
+  check(((await chip.textContent()) || '').includes('mock-model'), `model chip shows the chat's model (${await chip.textContent()})`)
+  await chip.click()
+  await page.locator('.sheet', { hasText: 'mock-sonnet' }).first().waitFor({ timeout: 3000 }).then(() => check(true, 'chip opens the model picker'), () => check(false, 'chip opens the model picker'))
+  await page.evaluate(() => window.hermesBack())
+
+  // ── canvas: a long canvas call opens the panel on a "writing" state, then shows the document ──
+  await page.getByPlaceholder('Message Hermes').fill('write canvas')
+  await page.locator('.composer').getByRole('button', { name: 'Send' }).click()
+  await sleep(400)
+  check((await page.locator('.canvas-panel').count()) === 0, 'a short tool call does not open the canvas')
+  await page.locator('.canvas-writing .canvas-skeleton').waitFor({ timeout: 4000 }).then(() => check(true, 'still writing after a moment: panel opens with the writing state'), () => check(false, 'still writing after a moment: panel opens with the writing state'))
+  check((await page.locator('.canvas-btn.writing').count()) === 1, 'the header canvas button pulses')
+  await page.locator('.canvas-writing-preview', { hasText: 'Step one' }).waitFor({ timeout: 4000 }).then(() => check(true, 'the text shows once the call starts'), () => check(false, 'the text shows once the call starts'))
+  await page.locator('.canvas-tab', { hasText: 'Plan' }).waitFor({ timeout: 5000 }).then(() => check(true, 'then the saved document replaces it'), () => check(false, 'then the saved document replaces it'))
+  check((await page.locator('.canvas-writing').count()) === 0 && (await page.locator('.canvas-btn.writing').count()) === 0, 'writing state gone')
+  await page.locator('.canvas-x').click()
+
   // ── #12 media streams through the shell's URL (no base64 through /api/files/read) ──
   await page.evaluate(() => (window.HermesAndroid = { mediaBase: () => 'http://127.0.0.1:9119/m?k=K&p=' }))
   await page.getByPlaceholder('Message Hermes').fill('show media')
@@ -401,7 +433,8 @@ async function main() {
 
   // ── #21 Files: Back goes up one folder, then leaves ──
   await page.getByRole('button', { name: /^Sessions/ }).click()
-  await page.locator('.nav-tile', { hasText: 'Files' }).click()
+  await page.locator('.nav-tile', { hasText: 'Hermes' }).click()
+  await page.locator('.hub-card', { hasText: 'Files' }).click()
   const crumbText = () => page.locator('.crumbs').textContent()
   await page.locator('.file-row', { hasText: /^📁a/ }).click()
   await page.locator('.crumbs', { hasText: 'sdcard/a/' }).waitFor({ timeout: 5000 })
@@ -416,10 +449,15 @@ async function main() {
   await page.evaluate(() => window.hermesBack())
   await sleep(300)
   check((await page.locator('.crumbs').count()) === 0, 'at the root chip Back leaves Files')
+  check((await page.locator('.hub-card').count()) === 5, '…back to the Hermes hub that opened it')
+  await page.evaluate(() => window.hermesBack())
+  await sleep(200)
+  check((await page.locator('.hub-card').count()) === 0, 'Back again closes the hub')
 
   // ── #22 Projects: tap a chat to open it ──
   await page.getByRole('button', { name: /^Sessions/ }).click()
-  await page.locator('.nav-tile', { hasText: 'Projects' }).click()
+  await page.locator('.nav-tile', { hasText: 'Hermes' }).click()
+  await page.locator('.hub-card', { hasText: 'Projects' }).click()
   await page.locator('.card', { hasText: 'Thesis' }).click()
   await page.locator('.project-chat', { hasText: 'Chat 4' }).click({ timeout: 5000 })
   await page.locator('.msg.assistant', { hasText: 'answer s-4' }).waitFor({ timeout: 5000 }).then(() => check(true, 'project chat opens'), () => check(false, 'project chat opens'))
@@ -427,7 +465,8 @@ async function main() {
 
   // ── #23 Cron: edit a job (falls back to replace when PUT isn't there), open a run's output ──
   await page.getByRole('button', { name: /^Sessions/ }).click()
-  await page.locator('.nav-tile', { hasText: 'Cron' }).click()
+  await page.locator('.nav-tile', { hasText: 'Hermes' }).click()
+  await page.locator('.hub-card', { hasText: 'Scheduled jobs' }).click()
   await page.locator('.card', { hasText: 'Morning brief' }).getByRole('button', { name: 'Edit' }).click()
   check((await page.locator('.field textarea').inputValue()) === 'Brief me', 'edit form is filled in')
   await page.locator('.field textarea').fill('Brief me, shorter')
@@ -497,6 +536,33 @@ async function main() {
   check(((await hv.textContent()) || '').includes('v0.21.5'), `About → Hermes version (${await hv.textContent()})`)
   await page.evaluate(() => window.hermesBack())
 
+  // ── Hermes hub: one screen with a summary per page ──
+  await page.getByRole('button', { name: /^Sessions/ }).click()
+  check((await page.locator('.nav-tile').count()) === 3, 'drawer has three tiles (Hermes, Bots, Settings)')
+  await page.locator('.nav-tile', { hasText: 'Hermes' }).click()
+  await page.locator('.hub-card', { hasText: '2 enabled of 3' }).waitFor({ timeout: 5000 }).then(() => check(true, 'hub: skills summary'), () => check(false, 'hub: skills summary'))
+  check((await page.locator('.hub-card', { hasText: '2 notes · 50% full · 1 about you' }).count()) === 1, 'hub: memory summary')
+  check((await page.locator('.hub-card', { hasText: '1 active' }).count()) === 1, 'hub: cron summary')
+  check((await page.locator('.hub-card', { hasText: '1 project' }).count()) === 1, 'hub: projects summary')
+  await page.locator('.hub-card', { hasText: 'Memory' }).click()
+  await page.locator('.screen .title', { hasText: 'Memory' }).waitFor({ timeout: 3000 })
+  await page.getByRole('button', { name: 'Back' }).last().click()
+  check((await page.locator('.hub-card').count()) === 5, 'Back from a page returns to the hub')
+  await page.evaluate(() => window.hermesBack())
+
+  // ── setup check (browser: only the Hermes checks) ──
+  await page.locator('.conn-dot').click()
+  await page.getByRole('button', { name: 'Setup check' }).click()
+  await page.locator('.setup-item.bad', { hasText: 'Plugin enabled' }).waitFor({ timeout: 5000 }).then(() => check(true, 'setup: a profile without the plugin shows ✕'), () => check(false, 'setup: a profile without the plugin shows ✕'))
+  check((await page.locator('.setup-item.ok', { hasText: 'Hermes is running' }).count()) === 1, 'setup: Hermes running ✓')
+  check((await page.locator('.setup-item.ok', { hasText: 'plugin is installed' }).count()) === 1, 'setup: plugin installed ✓')
+  check(((await page.locator('.setup-hero-title').textContent()) || '').includes('1 thing to fix'), 'setup: counts what is left')
+  await page.locator('.setup-item.bad').getByRole('button', { name: 'Enable' }).click()
+  await page.locator('.setup-hero-title', { hasText: 'All set' }).waitFor({ timeout: 5000 }).then(() => check(true, 'Enable fixes it: All set'), () => check(false, 'Enable fixes it: All set'))
+  const cfgPut = calls().filter(c => c.http === 'PUT' && c.path === '/api/config').pop()
+  check(cfgPut && JSON.stringify(cfgPut.body.config.plugins.enabled) === '["other","hermes-mobile"]', `keeps the other plugins (${JSON.stringify(cfgPut && cfgPut.body)})`)
+  await page.evaluate(() => window.hermesBack())
+
   // ── #19 in the app shell: the token comes asynchronously (no blocking getToken), every call carries the key ──
   const np = await browser.newPage({ viewport: { width: 375, height: 812 } })
   np.on('pageerror', e => {
@@ -540,7 +606,10 @@ async function main() {
       },
       stopSpeaking: key => k(key, 'stopSpeaking'),
       startListening: key => k(key, 'startListening'),
-      stopListening: key => k(key, 'stopListening')
+      stopListening: key => k(key, 'stopListening'),
+      // Setup check: the test sets window.__setup; fixes are recorded in window.__fixes.
+      setupState: key => (k(key, 'setupState'), JSON.stringify(window.__setup || { termux: true, runCommand: true, notifications: true, batteryApp: true, batteryTermux: true, startError: '' })),
+      setupFix: (key, what) => (k(key, 'setupFix'), (window.__fixes ||= []).push(what))
     }
   })
   const listsBefore = rpcs('session.list').length
@@ -568,6 +637,19 @@ async function main() {
   check(await np.locator('.live-bar').count() === 1, 'live mode still on before switching')
   await np.evaluate(() => window.hermesOpenSession('s-6'))
   await np.locator('.live-bar').waitFor({ state: 'detached', timeout: 5000 }).then(() => check(true, 'opening another chat ends live mode'), () => check(false, 'opening another chat ends live mode'))
+
+  // ── setup check with the Android checks: ✗ items have buttons that ask the shell to fix them ──
+  await np.evaluate(() => (window.__setup = { termux: true, runCommand: false, notifications: true, batteryApp: false, batteryTermux: true, startError: '' }))
+  await np.evaluate(() => window.hermesBack && window.hermesBack())
+  await np.locator('.conn-dot').click()
+  await np.getByRole('button', { name: 'Setup check' }).click()
+  await np.locator('.setup-hero-title', { hasText: '2 things to fix' }).waitFor({ timeout: 5000 }).then(() => check(true, 'native: two failing checks counted'), () => check(false, 'native: two failing checks counted'))
+  check((await np.locator('.setup-item.ok').count()) >= 6, 'native: the rest are ✓')
+  await np.locator('.setup-item.bad', { hasText: 'may start Hermes' }).getByRole('button', { name: 'Allow' }).click()
+  await np.locator('.setup-item.bad', { hasText: 'run in the background' }).getByRole('button', { name: 'Allow' }).click()
+  check(JSON.stringify(await np.evaluate(() => window.__fixes)) === '["permissions","battery-app"]', `fix buttons ask the shell (${JSON.stringify(await np.evaluate(() => window.__fixes))})`)
+  await np.evaluate(() => (window.__setup = { termux: true, runCommand: true, notifications: true, batteryApp: true, batteryTermux: true, startError: '' }))
+  await np.locator('.setup-hero-title', { hasText: 'All set' }).waitFor({ timeout: 6000 }).then(() => check(true, 'checks again by itself: All set'), () => check(false, 'checks again by itself: All set'))
   await np.close()
 
   // ── player, chat links, dictation, model in the + menu, learning dot (fake native bridge, speech never ends by itself) ──
@@ -621,7 +703,7 @@ async function main() {
   const vbox = vp.getByPlaceholder('Message Hermes')
   await vbox.waitFor({ timeout: 15000 })
   // model moved from the header into the + menu
-  check((await vp.locator('.model-chip').count()) === 0, 'no model chip in the header')
+  check((await vp.locator('header .model-chip').count()) === 0, 'no model chip in the header')
   await vp.getByRole('button', { name: 'Add', exact: true }).click()
   check((await vp.locator('.picker-opt', { hasText: 'Model' }).count()) === 1, '+ menu has the model row')
   await vp.locator('.picker-opt', { hasText: 'Model' }).click()

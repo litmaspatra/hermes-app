@@ -9,6 +9,7 @@ import { api } from '../api'
 import { Media } from './Media'
 import { DiffView, looksLikeDiff } from './Diff'
 import { formatOutput, memoryDiff, plainText } from '../text'
+import { runLabel, type ToolRun } from '../fold'
 
 // Stored outputs fetched for cards restored from history (resumed transcripts omit them).
 const outputCache = new Map<string, string>()
@@ -142,6 +143,26 @@ export const ToolCard = memo(function ToolCard({ item }: { item: Extract<ChatIte
         </div>
       )}
     </div>
+  )
+})
+
+/** The line a folded run of tool calls shows: icons of the tools used, "Ran 7 tools · 42s", a chevron. */
+export const ToolRunHead = memo(function ToolRunHead({ id, run, open, onToggle }: { id: string; run: ToolRun; open: boolean; onToggle: (id: string) => void }) {
+  return (
+    <button className={`tool-run${run.running ? ' running' : ''}`} aria-expanded={open} onClick={() => { haptic(); onToggle(id) }}>
+      <span className="tool-run-icons" aria-hidden="true">
+        {run.names.slice(0, 4).map(n => (
+          <span key={n} className="tool-icon">{TOOL_ICONS[n] || '🔧'}</span>
+        ))}
+      </span>
+      <span className="tool-run-label">
+        {runLabel(run)}
+        {run.errors ? <span className="tool-run-err"> · {run.errors} failed</span> : null}
+        <span className="tool-run-names">{run.names.join(', ')}</span>
+      </span>
+      {run.running ? <span className="spinner small" /> : null}
+      <span className="chev" aria-hidden="true">{open ? '▾' : '▸'}</span>
+    </button>
   )
 })
 

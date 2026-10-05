@@ -4,12 +4,9 @@ import { setState, useStore, type Screen } from '../store'
 import { SessionList } from './SessionList'
 import { haptic } from '../bridge'
 
+// Skills, memory, cron, files and projects live on the Hermes hub (one tile, more room for chats).
 const NAV: [Exclude<Screen, null>, string, string][] = [
-  ['skills', '✦', 'Skills'],
-  ['memory', '🧠', 'Memory'],
-  ['cron', '⏱', 'Cron'],
-  ['files', '📁', 'Files'],
-  ['projects', '🗂', 'Projects'],
+  ['hub', '☤', 'Hermes'],
   ['bots', '🤖', 'Bots'],
   ['settings', '⚙', 'Settings']
 ]
@@ -65,7 +62,7 @@ export function Drawer() {
           </button>
           <div className="nav-grid">
             {NAV.map(([key, icon, label]) => (
-              <button key={key} className="nav-tile" onClick={() => { haptic(); setState({ screen: key, screenProfile: null, drawer: false }) }}>
+              <button key={key} className="nav-tile" onClick={() => { haptic(); setState({ screen: key, screenProfile: null, screenBack: null, drawer: false }) }}>
                 <span>{icon}</span>
                 {label}
               </button>

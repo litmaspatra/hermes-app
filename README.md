@@ -140,6 +140,8 @@ The first build makes a signing key in `~/.android/hermes-mobile.keystore`. A se
 
 ### If something goes wrong
 
+First open **Settings → Setup check** in the app (it also opens by itself when the app can't reach Hermes): it shows what's missing and has a button for each fix.
+
 | What you see | Fix |
 |---|---|
 | "Hermes is offline" for more than a minute | Open Termux, run `~/bin/hermes-services`, go back to the app and tap Reconnect |

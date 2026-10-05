@@ -442,6 +442,9 @@ export function StatusSheet() {
           >
             Reconnect / start Hermes
           </button>
+          <button className="btn" onClick={() => setState({ sheet: null, screen: 'setup' })}>
+            Setup check
+          </button>
         </div>
       </div>
     </Shell>

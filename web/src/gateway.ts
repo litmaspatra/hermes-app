@@ -2,7 +2,7 @@ import { markSeen, noteSessions } from './unread'
 import { rememberPrompt } from './recent'
 import { api } from './api'
 import { cachedChat, forgetChat, rememberChat, saveChatToDisk } from './chatcache'
-import { canvasToolDone } from './canvas'
+import { canvasCallStarted, canvasToolDone, canvasWritingDone, canvasWritingStarted } from './canvas'
 import { applyDraftRead, autoReadFor, liveBridge, setDraftRead, speak } from './voice'
 import { JsonRpcGatewayClient, type GatewayEvent } from '@hermes/shared/json-rpc-gateway'
 import type { ServerRequest } from '@hermes/shared/json-rpc-channel'
@@ -964,7 +964,10 @@ client.onEvent((ev: GatewayEvent) => {
       break
     case 'tool.generating': {
       closeAssistant()
-      pushItem({ kind: 'tool', id: newId('tg'), name: String(payload.name || 'tool'), status: 'generating' })
+      const name = String(payload.name || 'tool')
+      // Plugin tools (canvas) stream under the generic name until tool.start; a long one is a document being written.
+      if (name === 'canvas' || name === 'tool_call' || name === 'mcp__tool_call') canvasWritingStarted()
+      pushItem({ kind: 'tool', id: newId('tg'), name, status: 'generating' })
       break
     }
     case 'tool.start': {
@@ -984,6 +987,7 @@ client.onEvent((ev: GatewayEvent) => {
       }
       if (gen) patchItem(gen.id, () => tool)
       else pushItem(tool)
+      canvasCallStarted(p.name, p.args)
       break
     }
     case 'tool.complete': {
@@ -1048,6 +1052,7 @@ client.onEvent((ev: GatewayEvent) => {
     case 'message.complete': {
       const p = payload as MessageCompletePayload
       updateActive(a => ({ items: a.items.filter(i => !(i.kind === 'tool' && i.status === 'generating')) }))
+      canvasWritingDone()
       const openId = getState().active?.openAssistantId
       if (p.error || p.failure_reason) {
         pushItem({ kind: 'notice', id: newId('n'), text: String(p.error || p.failure_reason), level: 'error' })

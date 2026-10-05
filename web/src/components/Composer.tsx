@@ -30,6 +30,8 @@ const ATTACH_OPTIONS: Option[] = [
   }
 ]
 
+const EFFORT_SHORT: Record<string, string> = { medium: 'med', minimal: 'min', none: 'off' }
+
 export function Composer({ injected, onInjected }: { injected: string | null; onInjected: () => void }) {
   // Each chat keeps its own unsent text; the new-chat screen has one per profile.
   const draftKey = useStore(s => s.active?.storedId || `new:${s.profile}`)
@@ -308,6 +310,18 @@ export function Composer({ injected, onInjected }: { injected: string | null; on
           </button>
           <button className="btn danger" onClick={() => { haptic(); stopLive() }}>
             End
+          </button>
+        </div>
+      )}
+      {live === 'off' && !showMenu && (
+        // The model Hermes reports for this chat (session.info), or the profile default before a chat exists.
+        <div className="model-row">
+          <button className="model-chip" aria-label={`Model: ${model || 'none'}. Change model`} onClick={() => { haptic(); setState({ sheet: 'model' }) }} disabled={offline}>
+            <svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 3l1.9 4.6L18.5 9l-4.6 1.9L12 15.5l-1.9-4.6L5.5 9l4.6-1.4z" />
+            </svg>
+            <span className="model-chip-name">{model ? model.replace(/^.*\//, '') : 'Choose a model'}</span>
+            {effort && model ? <span className="model-chip-effort">{EFFORT_SHORT[effort] ?? effort}</span> : null}
           </button>
         </div>
       )}

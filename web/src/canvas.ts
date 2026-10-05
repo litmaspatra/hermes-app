@@ -42,10 +42,14 @@ interface CanvasState {
   mode: Record<string, 'view' | 'edit'>
   save: SaveState
   remote: string | null // id of a document Hermes changed while you have unsaved edits
+  /** Hermes is writing a canvas call right now (its arguments stream from the model, which takes a while for a big
+   * page). Hermes sends no text until the call is complete, so the panel shows a "writing" state; `preview` is the
+   * document text once the call starts (before the save lands). */
+  writing: { since: number; title?: string; preview?: string; docId?: string; autoOpened?: boolean } | null
 }
 
 const P = '/api/plugins/hermes-mobile/canvas'
-let state: CanvasState = { session: '', open: false, size: 'half', docs: [], active: null, loaded: {}, mode: {}, save: 'idle', remote: null }
+let state: CanvasState = { session: '', open: false, size: 'half', docs: [], active: null, loaded: {}, mode: {}, save: 'idle', remote: null, writing: null }
 const subs = new Set<() => void>()
 const set = (p: Partial<CanvasState>) => {
   state = { ...state, ...p }
@@ -78,7 +82,7 @@ function syncSession(): void {
     )
   }
   dirtyText = null
-  set({ session: id, open: false, docs: [], active: null, loaded: {}, mode: {}, save: 'idle', remote: null })
+  set({ session: id, open: false, docs: [], active: null, loaded: {}, mode: {}, save: 'idle', remote: null, writing: null })
   if (id) void refreshDocs()
 }
 
@@ -237,7 +241,7 @@ export async function restoreVersion(id: string, rev: number): Promise<void> {
   dirtyText = null
   try {
     await call('POST', `${P}/restore`, { session: state.session, id, rev })
-    set({ save: 'idle', remote: null })
+    set({ save: 'idle', remote: null, writing: null })
     await loadDoc(id, true)
     toast('Version restored')
   } catch (e) {
@@ -279,6 +283,7 @@ export async function saveToFile(id: string): Promise<void> {
 /** gateway.ts calls this when Hermes's `canvas` tool finished. Opens the panel for new documents. */
 export function canvasToolDone(resultText: string | null | undefined, args: unknown): void {
   syncSession()
+  canvasWritingDone()
   let shown = false
   let id = ''
   try {
@@ -298,6 +303,49 @@ export function canvasToolDone(resultText: string | null | undefined, args: unkn
       } else if (!state.open) toast(action === 'create' ? 'Hermes added a document to the canvas' : 'Hermes updated the canvas', 'info')
     }
   })
+}
+
+let writeTimer: ReturnType<typeof setTimeout> | null = null
+
+/** gateway.ts: the model started writing what is (probably) a canvas call. After a moment, still writing = a real
+ * document (reads and lists are short), so the panel opens on the writing state. */
+export function canvasWritingStarted(): void {
+  if (state.writing) return
+  set({ writing: { since: Date.now() } })
+  if (writeTimer) clearTimeout(writeTimer)
+  writeTimer = setTimeout(() => {
+    writeTimer = null
+    if (state.writing && !state.open) set({ open: true, writing: { ...state.writing, autoOpened: true } })
+  }, 1500)
+}
+
+/** gateway.ts: the call's real name and arguments arrived. Not a canvas call after all: undo the guess. */
+export function canvasCallStarted(name: string, args: Record<string, unknown> | null | undefined): void {
+  if (writeTimer) clearTimeout(writeTimer)
+  writeTimer = null
+  const w = state.writing
+  if (name !== 'canvas') {
+    if (w) set({ writing: null, open: w.autoOpened ? false : state.open })
+    return
+  }
+  const action = String(args?.action || '')
+  if (action !== 'create' && action !== 'write') {
+    if (w) set({ writing: null, open: w.autoOpened ? false : state.open })
+    return
+  }
+  const content = typeof args?.content === 'string' ? args.content : undefined
+  const docId = typeof args?.id === 'string' ? args.id : undefined
+  set({ writing: { since: w?.since ?? Date.now(), title: typeof args?.title === 'string' ? args.title : undefined, preview: content, docId, autoOpened: w?.autoOpened } })
+}
+
+/** The turn ended (or the tool finished): no more writing state. */
+export function canvasWritingDone(): void {
+  if (writeTimer) clearTimeout(writeTimer)
+  writeTimer = null
+  if (!state.writing) return
+  const w = state.writing
+  // Opened only for a call that wrote nothing that shows (failed, or the turn was stopped): close it again.
+  set({ writing: null, open: w.autoOpened && !state.active ? false : state.open })
 }
 
 // ── background sync while it matters ─────────────────────────

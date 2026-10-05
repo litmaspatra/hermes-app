@@ -212,8 +212,80 @@ public class MainActivity extends Activity {
             i.putExtra("com.termux.RUN_COMMAND_BACKGROUND", true);
             i.putExtra("com.termux.RUN_COMMAND_SESSION_ACTION", "0");
             startForegroundService(i);
-        } catch (Exception ignored) {
+            startError = "";
+        } catch (Exception e) {
             // Termux missing or allow-external-apps disabled: the UI shows "Hermes is offline".
+            startError = String.valueOf(e.getMessage());
+        }
+    }
+
+    /** Why the last startHermes failed ("" = the intent went through), for the setup check. */
+    volatile String startError = "";
+
+    boolean installed(String pkg) {
+        try {
+            getPackageManager().getPackageInfo(pkg, 0);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /** What the setup check needs to know that only Android can tell. */
+    String setupState() {
+        android.os.PowerManager pm = (android.os.PowerManager) getSystemService(POWER_SERVICE);
+        org.json.JSONObject o = new org.json.JSONObject();
+        try {
+            o.put("termux", installed("com.termux"));
+            o.put("runCommand", checkSelfPermission("com.termux.permission.RUN_COMMAND") == PackageManager.PERMISSION_GRANTED);
+            o.put("notifications", Build.VERSION.SDK_INT < 33 || checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED);
+            o.put("batteryApp", pm != null && pm.isIgnoringBatteryOptimizations(getPackageName()));
+            o.put("batteryTermux", pm != null && pm.isIgnoringBatteryOptimizations("com.termux"));
+            o.put("startError", startError);
+        } catch (Exception ignored) {
+        }
+        return o.toString();
+    }
+
+    /** Open the place that fixes one setup item. Only these fixed targets: nothing from the page reaches an intent. */
+    void setupFix(String what) {
+        try {
+            Intent i;
+            switch (what) {
+                case "permissions":
+                    requestRuntimePermissions();
+                    return;
+                case "start":
+                    lastStartRequest = 0;
+                    startHermes();
+                    return;
+                case "notifications":
+                    i = new Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                            .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, getPackageName());
+                    break;
+                case "battery-app":
+                    i = new Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:" + getPackageName()));
+                    break;
+                case "battery-termux":
+                    i = new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:com.termux"));
+                    break;
+                case "app-settings":
+                    i = new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + getPackageName()));
+                    break;
+                case "open-termux":
+                    i = getPackageManager().getLaunchIntentForPackage("com.termux");
+                    if (i == null) return;
+                    break;
+                case "get-termux":
+                    i = new Intent(Intent.ACTION_VIEW, Uri.parse("https://f-droid.org/packages/com.termux/"));
+                    break;
+                default:
+                    return;
+            }
+            startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+        } catch (Exception e) {
+            // The direct battery prompt is missing on some ROMs: fall back to the app's own settings page.
+            if (what.equals("battery-app")) setupFix("app-settings");
         }
     }
 
@@ -1007,6 +1079,18 @@ public class MainActivity extends Activity {
         public String sharedItem(String key, int index) {
             if (!ok(key)) return "";
             return readShared(index);
+        }
+
+        @JavascriptInterface
+        public String setupState(String key) {
+            if (!ok(key)) return "{}";
+            return MainActivity.this.setupState();
+        }
+
+        @JavascriptInterface
+        public void setupFix(String key, final String what) {
+            if (!ok(key) || what == null) return;
+            runOnUiThread(() -> MainActivity.this.setupFix(what));
         }
 
         @JavascriptInterface

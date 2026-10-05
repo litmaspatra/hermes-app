@@ -447,6 +447,50 @@ function snapHeights() {
   return { half: vh * 0.58, full: vh - safeTop }
 }
 
+const WIDE = window.matchMedia('(min-width: 840px)')
+
+function useElapsed(since: number): number {
+  const [now, setNow] = useState(Date.now())
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(t)
+  }, [])
+  return Math.max(0, Math.round((now - since) / 1000))
+}
+
+function WritingBanner({ since }: { since: number }) {
+  const secs = useElapsed(since)
+  return (
+    <div className="canvas-writing-bar" role="status">
+      <span className="spinner small" /> Hermes is rewriting this document… {secs}s
+    </div>
+  )
+}
+
+/** While Hermes writes a new document: its title and text once the call starts, skeleton lines until then. */
+function CanvasWriting({ since, title, preview }: { since: number; title?: string; preview?: string }) {
+  const secs = useElapsed(since)
+  return (
+    <div className="canvas-writing" role="status" aria-live="polite">
+      <div className="canvas-writing-bar">
+        <span className="spinner small" />
+        <span>
+          {preview != null ? 'Saving' : 'Hermes is writing'} {title ? <b>“{title}”</b> : 'a document'}… {secs}s
+        </span>
+      </div>
+      {preview != null ? (
+        <pre className="canvas-writing-preview">{preview.length > 40000 ? preview.slice(0, 40000) + '\n…' : preview}</pre>
+      ) : (
+        <div className="canvas-skeleton" aria-hidden="true">
+          {[92, 78, 85, 40, 88, 70, 95, 55].map((w, i) => (
+            <span key={i} style={{ width: `${w}%`, animationDelay: `${i * 0.12}s` }} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function CanvasPanel() {
   const open = useCanvas(s => s.open)
   const size = useCanvas(s => s.size)
@@ -456,6 +500,7 @@ export function CanvasPanel() {
   const modes = useCanvas(s => s.mode)
   const save = useCanvas(s => s.save)
   const remote = useCanvas(s => s.remote)
+  const writing = useCanvas(s => s.writing)
   const [menu, setMenu] = useState<null | 'doc' | 'new' | 'history'>(null)
   const [sel, setSel] = useState('')
   const [ask, setAsk] = useState('')
@@ -469,6 +514,10 @@ export function CanvasPanel() {
   const doc = activeId ? loaded[activeId] : undefined
   const mode = (activeId && modes[activeId]) || 'view'
 
+  // Wide screens put the open canvas in a column beside the chat (styles.css, html[data-canvas]).
+  useEffect(() => {
+    document.documentElement.dataset.canvas = open ? size : ''
+  }, [open, size])
   useBackHandler(() => (size === 'max' ? setCanvasSize('full') : size === 'full' ? setCanvasSize('half') : closeCanvas()), open && menu === null)
   useEffect(() => {
     if (open && activeId && !loaded[activeId]) void loadDoc(activeId)
@@ -518,7 +567,7 @@ export function CanvasPanel() {
     },
     onPointerMove: (e: React.PointerEvent<HTMLElement>) => {
       const d = drag.current
-      if (!d || !panel.current) return
+      if (!d || !panel.current || WIDE.matches) return // a side column on wide screens: no height to drag
       if (!d.cap) {
         if (Math.abs(e.clientY - d.y) < 8) return
         d.cap = true
@@ -583,7 +632,9 @@ export function CanvasPanel() {
           </button>
         </div>
 
-        {!meta ? (
+        {writing && (!meta || !writing.docId || writing.docId !== meta.id) ? (
+          <CanvasWriting since={writing.since} title={writing.title} preview={writing.preview} />
+        ) : !meta ? (
           <div className="canvas-empty">
             <div className="canvas-empty-icon">🗒</div>
             <div className="canvas-empty-title">Your canvas is empty</div>
@@ -635,6 +686,7 @@ export function CanvasPanel() {
               </button>
             </div>
 
+            {writing && writing.docId === meta.id && <WritingBanner since={writing.since} />}
             {remote === meta.id && (
               <div className="canvas-banner">
                 <span>Hermes changed this document while you were editing.</span>

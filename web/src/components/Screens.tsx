@@ -5,7 +5,7 @@ import { useSheetDrag } from './useSheetDrag'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { api, ApiError, qs } from '../api'
 import { errText, newSession, resumeSession, rpc } from '../gateway'
-import { setState, toast, useStore } from '../store'
+import { closeScreen, setState, toast, useStore, type Screen } from '../store'
 import { haptic, openFile } from '../bridge'
 import { Markdown } from './Markdown'
 
@@ -15,7 +15,7 @@ export function ScreenShell({ title, actions, children, onBack }: { title: strin
   return (
     <div className="screen">
       <header className="topbar">
-        <button className="back-btn" aria-label="Back" onClick={() => (onBack ? onBack() : setState({ screen: null }))}>
+        <button className="back-btn" aria-label="Back" onClick={() => (onBack ? onBack() : closeScreen())}>
           <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M14.5 5.5 8 12l6.5 6.5" />
           </svg>
@@ -652,7 +652,7 @@ export function FilesScreen({ onUse }: { onUse: (text: string) => void }) {
         ))}
       </div>
       <div className="crumbs">
-        <button onClick={() => setPath('/')}>/</button>
+        <button aria-label="Top folder" onClick={() => setPath('/')}>/</button>
         {crumbs.map((c, i) => (
           <button key={i} onClick={() => setPath('/' + crumbs.slice(0, i + 1).join('/'))}>
             {c}/
@@ -665,7 +665,7 @@ export function FilesScreen({ onUse }: { onUse: (text: string) => void }) {
           <button className="btn primary" onClick={() => void mkdir()}>
             Create
           </button>
-          <button className="btn" onClick={() => setNewDir(null)}>
+          <button className="btn" aria-label="Cancel" onClick={() => setNewDir(null)}>
             ✕
           </button>
         </div>
@@ -899,6 +899,112 @@ export function ProjectsScreen() {
           </div>
         </Sheet>
       )}
+    </ScreenShell>
+  )
+}
+
+// ── Hermes hub ───────────────────────────────────────────────
+// One screen for what Hermes knows and does on its own, each with a one-line summary; Back from a page returns here.
+
+const HUB: { key: Exclude<Screen, null>; icon: string; title: string; tone: string }[] = [
+  { key: 'skills', icon: '✦', title: 'Skills', tone: 'gold' },
+  { key: 'memory', icon: '🧠', title: 'Memory', tone: 'purple' },
+  { key: 'cron', icon: '⏱', title: 'Scheduled jobs', tone: 'blue' },
+  { key: 'files', icon: '📁', title: 'Files', tone: 'teal' },
+  { key: 'projects', icon: '🗂', title: 'Projects', tone: 'green' }
+]
+
+interface HubData {
+  skills?: string
+  memory?: string
+  memPct?: number
+  cron?: string
+  projects?: string
+}
+
+/** One loader per card, so a slow one (Hermes busy) doesn't hold the others back. */
+const HUB_LOADERS: (() => Promise<Partial<HubData>>)[] = [
+  async () => {
+    const skills = await api<SkillRow[]>('GET', '/api/skills')
+    const on = skills.filter(s => s.enabled !== false).length
+    return { skills: `${on} enabled${on < skills.length ? ` of ${skills.length}` : ''}` }
+  },
+  async () => {
+    const mem = await api<MemData>('GET', '/api/plugins/hermes-mobile/memory')
+    const pct = mem.memory.limit ? Math.round((mem.memory.used / mem.memory.limit) * 100) : 0
+    return { memPct: pct, memory: `${mem.memory.entries.length} notes · ${pct}% full · ${mem.user.entries.length} about you` }
+  },
+  async () => {
+    const jobs = await api<Job[] | { jobs?: Job[] }>('GET', '/api/cron/jobs')
+    const list = Array.isArray(jobs) ? jobs : jobs.jobs ?? []
+    const active = list.filter(j => !jobPaused(j))
+    const next = active
+      .map(j => j.next_run_at ?? j.next_run)
+      .map(v => (typeof v === 'number' ? (v > 1e12 ? v : v * 1000) : Date.parse(String(v ?? ''))))
+      .filter(n => Number.isFinite(n) && n > Date.now())
+      .sort((a, b) => a - b)[0]
+    return {
+      cron: list.length
+        ? `${active.length} active${list.length > active.length ? `, ${list.length - active.length} paused` : ''}${next ? ` · next ${fmtTime(next)}` : ''}`
+        : 'None yet'
+    }
+  },
+  async () => {
+    const r = await rpc<{ projects: Project[] }>('projects.list')
+    const n = r.projects.length
+    return { projects: n ? `${n} project${n > 1 ? 's' : ''}` : 'None yet' }
+  }
+]
+
+export function HubScreen() {
+  const profile = useStore(s => s.profile)
+  const [data, setData] = useState<HubData>({})
+  const [failed, setFailed] = useState<Set<number>>(() => new Set())
+  useEffect(() => {
+    let live = true
+    setData({})
+    setFailed(new Set())
+    HUB_LOADERS.forEach((load, i) =>
+      load().then(
+        d => live && setData(x => ({ ...x, ...d })),
+        () => live && setFailed(f => new Set(f).add(i))
+      )
+    )
+    return () => {
+      live = false
+    }
+  }, [profile])
+  const sub = (k: string): string => {
+    if (k === 'files') return 'Browse, open and upload on the phone'
+    const v = data[k as keyof HubData]
+    return typeof v === 'string' ? v : failed.has(['skills', 'memory', 'cron', 'projects'].indexOf(k)) ? 'Couldn’t load' : 'Loading…'
+  }
+  return (
+    <ScreenShell title="Hermes">
+      <div className="hub">
+        {HUB.map(h => (
+          <button
+            key={h.key}
+            className="hub-card"
+            onClick={() => {
+              haptic()
+              setState({ screen: h.key, screenBack: 'hub' })
+            }}
+          >
+            <span className={`set-icon tone-${h.tone}`} aria-hidden="true">{h.icon}</span>
+            <span className="hub-text">
+              <span className="hub-title">{h.title}</span>
+              <span className="hub-sub">{sub(h.key)}</span>
+              {h.key === 'memory' && data.memPct != null && (
+                <span className="hub-meter" aria-hidden="true">
+                  <span style={{ width: `${Math.min(100, data.memPct)}%` }} className={data.memPct >= 90 ? 'full' : ''} />
+                </span>
+              )}
+            </span>
+            <span className="chev" aria-hidden="true">›</span>
+          </button>
+        ))}
+      </div>
     </ScreenShell>
   )
 }

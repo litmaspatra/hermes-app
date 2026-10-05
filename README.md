@@ -88,60 +88,83 @@ sends status and approval events to the app's notification service.
 
 ## Setup
 
-You need an Android phone (arm64) and a computer with a USB cable once, to install the app. About 20 minutes.
+**Time:** about 30 minutes. **You need:** an Android phone (arm64, Android 8+) and a computer (once, to install the app).
 
-> Honest note: the author runs this on their own phone. The commands below were checked against that phone (`hermes plugins enable`, the dashboard flags, `allow-external-apps`), but the whole sequence has not been run on a clean phone. If a step fails, open an issue.
+> There is no ready-made APK yet, so you build the app yourself (step 3). Everything else is copy and paste.
+> Honest note: this was set up on the author's phone. The pieces were checked there and the installer script was tested on a dummy folder, but the whole path has not been run on a brand-new phone. If something fails, open an issue.
 
-**1. Install Termux (on the phone).** Get [Termux](https://f-droid.org/packages/com.termux/) from F-Droid (not the Play Store). Optional: Termux:API.
+### Step 1. On your phone: install Termux and Hermes
 
-**2. Install Debian and Hermes Agent inside Termux.** In Termux:
+1. Install **[Termux](https://f-droid.org/packages/com.termux/)** from F-Droid. (Not from the Play Store, that version is outdated.)
+2. Open Termux and paste:
+
+   ```bash
+   pkg update -y && pkg install -y proot-distro git
+   proot-distro install debian
+   proot-distro login debian
+   ```
+
+   You are now inside Debian (the prompt changes).
+3. Install Hermes Agent there by following **[Hermes's own install guide](https://github.com/NousResearch/hermes-agent)**, then run:
+
+   ```bash
+   hermes setup
+   ```
+
+   and add your model provider / API key when it asks. When it works, type `exit` to leave Debian and get back to the Termux prompt.
+
+### Step 2. On your phone, in Termux: run the installer
+
+Still in Termux (not Debian), paste:
 
 ```bash
-pkg update && pkg install proot-distro
-proot-distro install debian
-proot-distro login debian
-```
-
-Inside Debian, install Hermes Agent with Hermes's own instructions ([github.com/NousResearch/hermes-agent](https://github.com/NousResearch/hermes-agent)),
-then run `hermes setup` and add your model provider / API key. Check that `hermes dashboard --host 127.0.0.1 --port 9119 --no-open` starts.
-
-**3. Let the app start Hermes (in Termux, not Debian):**
-
-```bash
-mkdir -p ~/.termux && echo "allow-external-apps=true" >> ~/.termux/termux.properties
-termux-reload-settings
-```
-
-**4. Get this repo onto the phone and install the plugin.** In Termux:
-
-```bash
-pkg install git
 git clone https://github.com/omarqaterge/hermes-mobile-app.git ~/hermes-mobile
-mkdir -p ~/bin && cp ~/hermes-mobile/phone/hermes-services ~/bin/ && chmod +x ~/bin/hermes-services
-ROOT=$PREFIX/var/lib/proot-distro/containers/debian/rootfs/root
-mkdir -p $ROOT/.hermes/plugins $ROOT/.hermes/scripts
-cp -r ~/hermes-mobile/hermes-plugin/hermes-mobile $ROOT/.hermes/plugins/
-cp ~/hermes-mobile/phone/cron_ticker.py $ROOT/.hermes/scripts/
-proot-distro login debian -- hermes plugins enable hermes-mobile
+bash ~/hermes-mobile/phone/install.sh
 ```
 
-**5. Build and install the app (on your computer).** Install Node 20+, JDK 17 and the Android command-line tools
-(`sdkmanager "platforms;android-36" "build-tools;35.0.0"`), then, with the phone connected over USB debugging:
+It tells you what it does in 4 short lines: it allows the app to start Hermes, installs the plugin, and enables it. Safe to run again.
 
-```bash
-cd web && npm ci && cd ..
-export ANDROID_HOME=/path/to/android-sdk JAVA_HOME=/path/to/jdk17
-VERSION_NAME=1.0.0 VERSION_CODE=1 android/build.sh
-adb install -r android/build/hermes-mobile.apk
-```
+### Step 3. On your computer: build and install the app
 
-The first build creates a local signing key in `~/.android/hermes-mobile.keystore`. Keep it: updates must be signed with the same key.
+1. Install **Node 20+**, **JDK 17** and the **[Android command-line tools](https://developer.android.com/studio#command-line-tools-only)**, then:
 
-**6. First run.** Open the app and allow the permissions it asks for (notifications, Termux commands). It starts Hermes through Termux
-and connects. If it says "Hermes is offline", open Termux and run `~/bin/hermes-services`, then tap Reconnect.
-On Xiaomi/HyperOS and similar phones also allow Autostart and unrestricted battery for Hermes and Termux, or Android will kill them.
+   ```bash
+   sdkmanager "platforms;android-36" "build-tools;35.0.0"
+   ```
+2. On the phone turn on **Developer options → USB debugging**, plug it in, and allow the computer.
+3. In a terminal on the computer:
 
-Optional: install Termux:Boot and make `~/.termux/boot/10-hermes` run `~/bin/hermes-services` so everything starts after a reboot.
+   ```bash
+   git clone https://github.com/omarqaterge/hermes-mobile-app.git
+   cd hermes-mobile-app
+   (cd web && npm ci)
+   export ANDROID_HOME=/path/to/your/android-sdk
+   export JAVA_HOME=/path/to/your/jdk-17
+   VERSION_NAME=1.0.0 VERSION_CODE=1 android/build.sh
+   adb install -r android/build/hermes-mobile.apk
+   ```
+
+   The first build makes a signing key in `~/.android/hermes-mobile.keystore`. Keep a copy: future updates must use the same key.
+
+### Step 4. Open the app
+
+1. Open **Hermes Mobile** and allow the permissions it asks for (notifications, and "run commands in Termux").
+2. It starts Hermes by itself and connects. The first start can take up to a minute.
+3. Say hi. Done.
+
+**Recommended:** in Android settings set **battery to "Unrestricted"** for both *Hermes Mobile* and *Termux*, and on Xiaomi/HyperOS also turn on *Autostart*. Otherwise Android may kill them in the background.
+
+### If something goes wrong
+
+| What you see | Fix |
+|---|---|
+| "Hermes is offline" for more than a minute | Open Termux, run `~/bin/hermes-services`, go back to the app and tap Reconnect |
+| Installer says "Debian is not installed" or "Hermes is not set up" | Finish Step 1 first |
+| No status chip / canvas / approvals | In Termux run `proot-distro login debian -- hermes plugins list` and check `hermes-mobile` says *enabled* (or re-run the installer) |
+| The app can't start Hermes | In Termux run `grep allow-external ~/.termux/termux.properties`, it must say `true`. Re-run the installer, then restart Termux |
+| Everything stops after a while | Battery is restricted: see the recommended settings above |
+
+Optional: install **Termux:Boot** and put `~/bin/hermes-services` in `~/.termux/boot/10-hermes` so Hermes starts after a reboot.
 
 <details>
 <summary><b>How it works in more detail, and the full feature list</b></summary>

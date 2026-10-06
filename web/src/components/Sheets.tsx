@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CommandsCatalogResult, ModelOptionsResult, RollbackDiffResult, RollbackListResult, RollbackRestoreResult } from '@hermes/shared/gateway-contract.generated'
 import { REASONING_EFFORT_VALUES } from '@hermes/shared/reasoning-effort'
 import { deleteSession, errText, reconnectNow, renameSession, renameStored, resumeSession, rpc, setModel, setReasoning, undoLast } from '../gateway'
@@ -49,6 +49,7 @@ export function ModelSheet() {
   const currentModel = active?.info.model || data?.model
   const currentProvider = active?.info.provider || data?.provider
   const effort = active?.info.reasoning_effort || 'medium'
+  const touched = useRef(false) // a level picked in this sheet wins over the medium reset on a model switch
   const providers = useMemo(() => {
     const needle = q.trim().toLowerCase()
     return (data?.providers || [])
@@ -66,6 +67,7 @@ export function ModelSheet() {
             className={`pill${e === effort ? ' on' : ''}`}
             onClick={() => {
               haptic()
+              touched.current = true
               setReasoning(e).catch(x => toast(errText(x), 'error'))
             }}
           >
@@ -93,7 +95,7 @@ export function ModelSheet() {
                     haptic()
                     // A new chat's switch waits for its agent (~2 s); a send meanwhile waits for the switch.
                     setState({ sheet: null })
-                    setModel(p.slug, m).catch(x => toast(errText(x), 'error'))
+                    setModel(p.slug, m, touched.current ? undefined : 'medium').catch(x => toast(errText(x), 'error'))
                   }}
                 >
                   {on ? '● ' : ''}

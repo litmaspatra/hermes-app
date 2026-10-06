@@ -762,19 +762,26 @@ function markBuilt(runtimeId: string): void {
   b.resolve()
 }
 
-export async function setModel(provider: string, model: string): Promise<void> {
+export async function setModel(provider: string, model: string, effort?: string): Promise<void> {
   const a = getState().active ?? (await newSession())
+  // Show the pick at once; Hermes needs a few seconds to rebuild the agent. Undone below if it fails.
+  const before = { model: a.info.model, provider: a.info.provider }
+  updateActive(x => (x.runtimeId === a.runtimeId ? { info: { ...x.info, model, provider } } : {}))
   const run = (async () => {
     await builds.get(a.runtimeId)?.done
     await rpc('config.set', { session_id: a.runtimeId, key: 'model', value: `${model} --provider ${provider} --session` })
+    if (effort) await rpc('config.set', { session_id: a.runtimeId, key: 'reasoning', value: effort })
   })()
   switching.set(a.runtimeId, run)
   try {
     await run
+  } catch (e) {
+    updateActive(x => (x.runtimeId === a.runtimeId ? { info: { ...x.info, ...before } } : {}))
+    throw e
   } finally {
     if (switching.get(a.runtimeId) === run) switching.delete(a.runtimeId)
   }
-  updateActive(x => (x.runtimeId === a.runtimeId ? { info: { ...x.info, model, provider } } : {}))
+  if (effort) updateActive(x => (x.runtimeId === a.runtimeId ? { info: { ...x.info, reasoning_effort: effort } } : {}))
   toast(`Model: ${model}`)
 }
 
@@ -947,7 +954,7 @@ client.onEvent((ev: GatewayEvent) => {
 
   switch (type) {
     case 'message.start':
-      stream = { chars: 0, ms: 0, last: 0 }
+      stream = { chars: 0, ms: 0, last: 0, total: 0, start: performance.now() }
       updateActive(() => ({ running: true, tps: null }))
       break
     case 'thinking.delta':
@@ -1224,10 +1231,11 @@ export async function branchAt(itemId: string): Promise<void> {
 
 /** Streamed text of the running turn. Only gaps under 2 s count as generating, so tool runs and
  * approvals don't drag the rate down. */
-let stream = { chars: 0, ms: 0, last: 0 }
+let stream = { chars: 0, ms: 0, last: 0, total: 0, start: 0 }
 
 function countStream(t: string): void {
   const now = performance.now()
+  stream.total += t.length
   if (stream.last && now - stream.last < 2000) {
     stream.ms += now - stream.last
     stream.chars += t.length
@@ -1252,6 +1260,12 @@ function fullReply(openId: string, streamed: string, finalText: string): string 
 
 /** ~4 characters per token: a rough measure for providers that report no usage. */
 const estTps = () => Math.round(stream.chars / 4 / (stream.ms / 1000))
+
+/** When the reply arrived in one or two big chunks (no usable gaps), fall back to the whole turn's wall time. */
+function wallTps(): number | null {
+  const s = (performance.now() - stream.start) / 1000
+  return stream.start && stream.total > 40 && s > 0.5 ? Math.max(1, Math.round(stream.total / 4 / s)) : null
+}
 
 function lastAssistantId(): string | null {
   const items = getState().active?.items || []
@@ -1304,7 +1318,7 @@ export function fmtCtx(c: Ctx): string {
 
 async function finishTurnStats(itemId: string | null, usage?: Usage | null): Promise<void> {
   const reported = usage?.avg_tps && usage.avg_tps > 0 ? Math.round(usage.avg_tps) : null
-  const tps = reported ?? (stream.ms > 400 ? estTps() : null)
+  const tps = reported ?? (stream.ms > 400 ? estTps() : wallTps())
   const ctx = await refreshCtx(usage)
   const parts = [tps ? `${reported ? '' : '~'}${tps} tok/s` : '', ctx ? fmtCtx(ctx) : ''].filter(Boolean)
   if (!itemId || !parts.length) return

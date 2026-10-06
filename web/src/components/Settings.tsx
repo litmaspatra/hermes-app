@@ -6,6 +6,7 @@ import { autoReadOn, loadVoices, saveTtsConfig, setAutoRead, testVoice, ttsAvail
 import { confirmDialog } from '../dialog'
 import { useEffect, useMemo, useState } from 'react'
 import { api, qs } from '../api'
+import { REASONING_EFFORT_VALUES } from '@hermes/shared/reasoning-effort'
 import { errText, loadDefaultModel, loadProfiles, reconnectNow } from '../gateway'
 import { getState, setState, toast, useStore } from '../store'
 import { appVersion, haptic } from '../bridge'
@@ -37,22 +38,25 @@ export const profileLabel = (p: { name: string; bot_title?: string; display_name
   p.display_name || p.bot_title || p.name
 
 /** Main model for one profile, via the same validated path as Desktop's Models page. */
-export async function setProfileModel(profile: string, provider: string, model: string): Promise<void> {
+export async function setProfileModel(profile: string, provider: string, model: string, effort = 'medium'): Promise<void> {
   const body = { scope: 'main', provider, model, profile }
   let r = await api<{ ok?: boolean; confirm_required?: boolean; confirm_message?: string }>('POST', '/api/model/set', body, { profile: false })
   if (r?.confirm_required) {
     if (!(await confirmDialog({ title: `Use ${model}?`, message: r.confirm_message || 'This model may cost more than your usual one.', confirmLabel: 'Use it' }))) throw new Error('Cancelled')
     r = await api('POST', '/api/model/set', { ...body, confirm_expensive_model: true }, { profile: false })
   }
+  // The reasoning level new chats start with; a per-model override would beat it, so set that too.
+  await api('PUT', `/api/config?${qs({ profile })}`, { config: { agent: { reasoning_effort: effort, reasoning_overrides: { [model]: effort } } } }, { profile: false })
   void loadDefaultModel() // the header on the empty home screen follows the default
 }
 
 /** Provider → model picker for a profile. `target` is shown in the title. */
-export function ModelPicker({ profile, target, onPick, onClose }: { profile: string; target: string; onPick: (provider: string, model: string) => Promise<void>; onClose: () => void }) {
+export function ModelPicker({ profile, target, onPick, onClose }: { profile: string; target: string; onPick: (provider: string, model: string, effort: string) => Promise<void>; onClose: () => void }) {
   const [data, setData] = useState<ModelOptions | null>(null)
   const [err, setErr] = useState('')
   const [q, setQ] = useState('')
   const [busy, setBusy] = useState(false)
+  const [effort, setEffort] = useState('medium')
   useEffect(() => {
     api<ModelOptions>('GET', `/api/model/options?${qs({ profile })}`, undefined, { profile: false })
       .then(setData)
@@ -69,6 +73,13 @@ export function ModelPicker({ profile, target, onPick, onClose }: { profile: str
   }, [data, q, cur])
   return (
     <Sheet title={`Model · ${target}`} onClose={onClose}>
+      <div className="effort-row">
+        {REASONING_EFFORT_VALUES.map(e => (
+          <button key={e} className={`pill${e === effort ? ' on' : ''}`} onClick={() => { haptic(); setEffort(e) }}>
+            {e}
+          </button>
+        ))}
+      </div>
       <input className="search" placeholder="Search models…" value={q} onChange={e => setQ(e.target.value)} />
       <div className="sheet-scroll">
         {err && <div className="notice notice-error">{err}</div>}
@@ -90,7 +101,7 @@ export function ModelPicker({ profile, target, onPick, onClose }: { profile: str
                   onClick={() => {
                     haptic()
                     setBusy(true)
-                    onPick(p.slug, m)
+                    onPick(p.slug, m, effort)
                       .then(onClose)
                       .catch(e => errText(e) !== 'Cancelled' && toast(errText(e), 'error', 6000))
                       .finally(() => setBusy(false))
@@ -176,8 +187,8 @@ function ModelsTab() {
           profile={pick === '*' ? getState().profile : pick}
           target={target}
           onClose={() => setPick(null)}
-          onPick={async (provider, model) => {
-            const ok = await forProfiles(pick, n => setProfileModel(n, provider, model))
+          onPick={async (provider, model, effort) => {
+            const ok = await forProfiles(pick, n => setProfileModel(n, provider, model, effort))
             await loadProfiles()
             if (ok) toast(`${model} → ${target}`)
           }}

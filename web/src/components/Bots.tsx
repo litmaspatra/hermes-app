@@ -191,8 +191,8 @@ function BotSheet({ p, onClose, onChanged }: { p: Profile; onClose: () => void; 
         profile={p.name}
         target={label}
         onClose={() => setView('main')}
-        onPick={async (provider, model) => {
-          await setProfileModel(p.name, provider, model)
+        onPick={async (provider, model, effort) => {
+          await setProfileModel(p.name, provider, model, effort)
           toast(`${label} → ${model}`)
           onChanged()
         }}

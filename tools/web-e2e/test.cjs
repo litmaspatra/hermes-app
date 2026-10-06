@@ -609,7 +609,10 @@ async function main() {
       stopListening: key => k(key, 'stopListening'),
       // Setup check: the test sets window.__setup; fixes are recorded in window.__fixes.
       setupState: key => (k(key, 'setupState'), JSON.stringify(window.__setup || { termux: true, runCommand: true, notifications: true, batteryApp: true, batteryTermux: true, startError: '' })),
-      setupFix: (key, what) => (k(key, 'setupFix'), (window.__fixes ||= []).push(what))
+      setupFix: (key, what) => (k(key, 'setupFix'), (window.__fixes ||= []).push(what)),
+      listVoices: key => k(key, 'listVoices'),
+      isAssistant: key => (k(key, 'isAssistant'), !!window.__assistant),
+      openAssistantSettings: key => k(key, 'openAssistantSettings')
     }
   })
   const listsBefore = rpcs('session.list').length
@@ -637,6 +640,24 @@ async function main() {
   check(await np.locator('.live-bar').count() === 1, 'live mode still on before switching')
   await np.evaluate(() => window.hermesOpenSession('s-6'))
   await np.locator('.live-bar').waitFor({ state: 'detached', timeout: 5000 }).then(() => check(true, 'opening another chat ends live mode'), () => check(false, 'opening another chat ends live mode'))
+
+  // ── Phone assistant: Settings → Voice opens the system picker and shows the role once Hermes holds it ──
+  await np.getByRole('button', { name: /^Sessions/ }).click()
+  await np.locator('.nav-tile', { hasText: 'Settings' }).click()
+  await np.locator('.set-row', { hasText: 'Voice' }).first().click()
+  const ar = np.locator('.set-row', { hasText: 'Use Hermes as phone assistant' })
+  await ar.waitFor({ timeout: 5000 })
+  check(/Off/.test((await ar.textContent()) || ''), `assistant row says Off (${await ar.textContent()})`)
+  await ar.click()
+  check((await np.evaluate(() => window.__nativeCalls)).includes('openAssistantSettings'), 'assistant row opens the system picker')
+  await np.evaluate(() => {
+    window.__assistant = true
+    document.dispatchEvent(new Event('visibilitychange'))
+  })
+  await sleep(200)
+  check(/On/.test((await ar.textContent()) || ''), `assistant row says On after returning (${await ar.textContent()})`)
+  await np.evaluate(() => window.hermesBack())
+  await np.evaluate(() => window.hermesBack())
 
   // ── setup check with the Android checks: ✗ items have buttons that ask the shell to fix them ──
   await np.evaluate(() => (window.__setup = { termux: true, runCommand: false, notifications: true, batteryApp: false, batteryTermux: true, startError: '' }))

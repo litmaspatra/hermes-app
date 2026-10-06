@@ -656,11 +656,40 @@ function VoiceSettings() {
       <Section title="Live mode" footer="How long you stay silent before Live mode sends what you said.">
         <SliderRow icon="⏱" tone="purple" title="Pause before sending" value={livePause} min={0.5} max={6} step={0.5} format={v => `${v.toFixed(1)} s`} onChange={v => { setLivePauseState(v); setLivePause(v) }} />
       </Section>
+      <AssistantSection />
       <Section>
         <Row icon="▶" tone="gold" title="Test voice" sub="Plays a sample sentence with these settings" onClick={() => testVoice()} />
         <Row icon="↺" tone="gray" title="Reset voice settings" onClick={() => update({ engine: '', voice: '', rate: 1, pitch: 1 }, true)} />
       </Section>
     </>
+  )
+}
+
+/** Hermes as the phone's digital assistant: the assist gesture (long-press power, corner swipe) opens Live mode.
+ *  Android doesn't let an app take that role itself, so the row opens the system picker and re-checks on return. */
+function AssistantSection() {
+  const bridge = window.HermesAndroid
+  const check = () => Boolean(bridge?.isAssistant?.())
+  const [on, setOn] = useState(check)
+  useEffect(() => {
+    const again = () => {
+      if (document.visibilityState === 'visible') setOn(check())
+    }
+    document.addEventListener('visibilitychange', again)
+    return () => document.removeEventListener('visibilitychange', again)
+  }, [])
+  if (!bridge?.openAssistantSettings) return null
+  return (
+    <Section
+      title="Phone assistant"
+      footer={
+        on
+          ? 'Long-press the power button (or swipe in from a bottom corner) to talk to Hermes in Live mode. If it still opens another assistant, set the power-button shortcut to the assistant in the phone’s settings.'
+          : 'Choose Hermes under “Digital assistant app”. Then long-pressing the power button opens Hermes in Live mode, from any app.'
+      }
+    >
+      <Row icon="✦" tone="gold" title="Use Hermes as phone assistant" value={on ? 'On' : 'Off'} chevron onClick={() => bridge.openAssistantSettings?.()} />
+    </Section>
   )
 }
 

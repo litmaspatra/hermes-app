@@ -62,7 +62,7 @@ what Hermes remembers. Dark, OLED black or light.
 
 | | |
 |---|---|
-| **Voice** | Read replies aloud (any installed TTS engine), dictation, and a hands-free Live mode |
+| **Voice** | Read replies aloud (any installed TTS engine), dictation, a hands-free Live mode, and Hermes as your phone's assistant (long-press power → Live mode) |
 | **Skills & commands** | `/` autocomplete for every skill and slash command |
 | **Models** | Switch model and reasoning level per chat; defaults per profile |
 | **Cron & files** | Cron jobs (edit, run, results), a file browser and projects |
@@ -196,7 +196,7 @@ or to pin, and an Archived section.
 Settings: themes (dark, OLED black, light, system), text size, voice, the default model per bot or for
 all, every API key and every Hermes option. Bots (profiles): create (blank or cloned), rename, describe,
 edit SOUL.md, pick the model, delete. Screens for skills, memory, cron jobs (edit, run, view results),
-files and projects. Launcher shortcuts: New chat, Live mode, last chat.
+files and projects. Launcher shortcuts: New chat, Live mode, last chat. Phone assistant: pick Hermes under Default apps → Digital assistant app (Settings → Voice shows the state) and the assist gesture opens Live mode.
 
 This app is the only front end: it has no messaging-channel (Telegram, Discord…) settings on purpose.
 

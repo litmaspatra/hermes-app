@@ -20,6 +20,8 @@ interface AndroidBridge {
   speak?(text: string, cfg: string): void
   listVoices?(cfg: string): void
   openTtsEngineApp?(pkg: string): void
+  isAssistant?(): boolean // Hermes holds the phone's assistant role
+  openAssistantSettings?(): void // system page to pick the digital assistant app
   stopSpeaking?(): void
   startListening?(): void
   stopListening?(): void

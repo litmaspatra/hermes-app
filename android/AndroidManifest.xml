@@ -49,6 +49,13 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
             <meta-data android:name="android.app.shortcuts" android:resource="@xml/shortcuts" />
+            <!-- Phone assistant: once Hermes is picked as the digital assistant app, the assist gesture
+                 (long-press power / corner swipe) or a headset's voice button opens it in Live mode. -->
+            <intent-filter>
+                <action android:name="android.intent.action.ASSIST" />
+                <action android:name="android.intent.action.VOICE_COMMAND" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
             <!-- "Share to Hermes": text, links, photos, PDFs and other files from any app. -->
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />

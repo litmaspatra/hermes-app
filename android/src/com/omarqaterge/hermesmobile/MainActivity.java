@@ -174,7 +174,7 @@ public class MainActivity extends Activity {
         pendingSession = getIntent().getStringExtra("session");
         pendingDraft = getIntent().getStringExtra("draft");
         takeShare(getIntent());
-        pendingShortcut = getIntent().getStringExtra("shortcut");
+        pendingShortcut = shortcutOf(getIntent());
         requestRuntimePermissions();
         startHermes(); // no-op if already running; the supervisor script is idempotent
         web.loadUrl("file:///android_asset/www/index.html");
@@ -316,7 +316,7 @@ public class MainActivity extends Activity {
             openPendingSession();
         }
         if (takeShare(intent)) deliverShare();
-        String sc = intent.getStringExtra("shortcut");
+        String sc = shortcutOf(intent);
         if (sc != null) {
             pendingShortcut = sc;
             deliverShortcut();
@@ -326,11 +326,24 @@ public class MainActivity extends Activity {
     /** Launcher shortcut (res/xml/shortcuts.xml): "new" or "live". */
     String pendingShortcut = null;
 
+    /** The shortcut an intent asks for: the "shortcut" extra, or the assist gesture / headset voice button
+     *  (Hermes as the phone's digital assistant) → Live mode, or a new chat when the system hints at typing. */
+    static String shortcutOf(Intent in) {
+        if (in == null) return null;
+        String act = in.getAction();
+        if (Intent.ACTION_ASSIST.equals(act) || Intent.ACTION_VOICE_COMMAND.equals(act)) {
+            if ((in.getFlags() & Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0) return null; // reopened from Recents
+            return in.getBooleanExtra(Intent.EXTRA_ASSIST_INPUT_HINT_KEYBOARD, false) ? "new" : "live";
+        }
+        return in.getStringExtra("shortcut");
+    }
+
     void deliverShortcut() {
         if (!pageReady || pendingShortcut == null) return;
         String sc = pendingShortcut.replaceAll("[^a-z]", "");
         pendingShortcut = null;
         getIntent().removeExtra("shortcut");
+        getIntent().setAction(Intent.ACTION_MAIN); // an ASSIST intent must not start Live mode again
         web.evaluateJavascript("window.hermesShortcut && window.hermesShortcut('" + sc + "')", null);
     }
 
@@ -859,6 +872,34 @@ public class MainActivity extends Activity {
                 return;
             }
             getSharedPreferences("hm", MODE_PRIVATE).edit().putString("readaloud", json).apply();
+        }
+
+        /** Whether Hermes is the phone's digital assistant app (the assist gesture opens Live mode). */
+        @JavascriptInterface
+        public boolean isAssistant(String key) {
+            if (!ok(key)) return false;
+            if (Build.VERSION.SDK_INT < 29) return false;
+            try {
+                android.app.role.RoleManager rm = getSystemService(android.app.role.RoleManager.class);
+                return rm != null && rm.isRoleHeld(android.app.role.RoleManager.ROLE_ASSISTANT);
+            } catch (Exception e) {
+                return false;
+            }
+        }
+
+        /** Opens the system page where the digital assistant app is chosen (the role can't be requested directly). */
+        @JavascriptInterface
+        public void openAssistantSettings(String key) {
+            if (!ok(key)) return;
+            runOnUiThread(() -> {
+                for (String a : new String[] {android.provider.Settings.ACTION_VOICE_INPUT_SETTINGS, android.provider.Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS, android.provider.Settings.ACTION_SETTINGS}) {
+                    try {
+                        startActivity(new Intent(a).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+                        return;
+                    } catch (Exception ignored) {
+                    }
+                }
+            });
         }
 
         /** Opens the app of an installed text-to-speech engine (only real engines), e.g. ElevenReader, to pick its voice. */

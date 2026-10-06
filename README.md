@@ -156,6 +156,7 @@ First open **Settings → Setup check** in the app (it also opens by itself when
 | Installer says no ready-made app was found | Build it yourself (see above) |
 | No status chip / canvas / approvals | In Termux run `proot-distro login debian -- hermes plugins list` and check `hermes-mobile` says *enabled* (or re-run the installer) |
 | The app can't start Hermes | In Termux run `grep allow-external ~/.termux/termux.properties`, it must say `true`. Re-run the installer, then restart Termux |
+| Hermes's Google Calendar/Gmail script fails with `No module named googleapiclient` | In Termux run `proot-distro login debian -- apt-get install -y python3-googleapi python3-google-auth-oauthlib python3-google-auth-httplib2` (re-running the installer does the same) |
 | Everything stops after a while | Battery is restricted: see the recommended settings above |
 
 Optional: install **Termux:Boot** and put `~/bin/hermes-services` in `~/.termux/boot/10-hermes` so Hermes starts after a reboot.

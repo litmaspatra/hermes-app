@@ -47,6 +47,11 @@ if proot-distro login debian -- hermes plugins enable hermes-mobile; then :; els
   echo "Could not enable it automatically. Run inside Debian:  hermes plugins enable hermes-mobile"
 fi
 
+# Hermes' google-workspace skill (Gmail/Calendar/Drive) is often run with Debian's system python3, which lacks these.
+echo "    Adding the Google client libraries for Hermes' Google skill (optional)"
+proot-distro login debian -- bash -lc 'apt-get install -y python3-googleapi python3-google-auth-oauthlib python3-google-auth-httplib2' >/dev/null 2>&1 \
+  || echo "    Skipped (not needed unless you use Hermes with Google Calendar/Gmail)."
+
 echo "5/5 Downloading the app"
 apk="$HOME/hermes-mobile.apk"
 if curl -fsL -o "$apk" "$REPO/releases/latest/download/hermes-mobile.apk"; then

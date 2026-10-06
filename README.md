@@ -51,6 +51,13 @@ unless you allow it. Every change is a version with a diff you can restore.
 
 <p align="center"><img src="docs/img/canvas.png" alt="An interactive 3D solar system in the canvas" width="100%"></p>
 
+### Your phone's assistant
+
+Pick Hermes under Default apps → Digital assistant app and long-pressing the power button (or the assist gesture) opens it straight
+in hands-free Live mode. Settings → Voice shows whether it is on.
+
+<p align="center"><img src="docs/img/assistant.png" alt="Long-press power opens Hermes in Live mode" width="100%"></p>
+
 ### Your chats, your memory, your look
 
 Search inside every message, pin, archive, link chats to chats. Every memory write is shown as a diff, and there is a screen to see

@@ -20,4 +20,4 @@ Pull requests and issues are welcome.
 - No periodic loops or wake locks without a bound (battery).
 - Don't commit keys, tokens, `*.keystore`, `.env` files, or screenshots of real chats.
 
-See `CLAUDE.md` for the architecture overview. By contributing you agree your work is released under the MIT license.
+By contributing you agree your work is released under the MIT license.

@@ -97,6 +97,7 @@ public class HermesService extends Service {
         running = true;
         instance = this;
         new Thread(this::serve, "hermes-events").start();
+        rearmWake();
     }
 
     @Override
@@ -128,6 +129,7 @@ public class HermesService extends Service {
     /** WakeReceiver (the cron alarm): stay awake long enough for the ticker to start the due job. */
     synchronized void wakeForCron() {
         alarmAt = 0;
+        getSharedPreferences("hermes", MODE_PRIVATE).edit().remove("wake_at").apply(); // fired: nothing to re-arm
         alarmAwakeUntil = System.currentTimeMillis() + CRON_WAKE_MS;
         updateWake();
     }
@@ -158,6 +160,7 @@ public class HermesService extends Service {
         long at = (long) (atSec * 1000);
         if (at == alarmAt) return;
         alarmAt = at;
+        getSharedPreferences("hermes", MODE_PRIVATE).edit().putLong("wake_at", at).apply();
         AlarmManager am = getSystemService(AlarmManager.class);
         // A broadcast: the alarm manager keeps the CPU awake until onReceive returns, which takes our lock.
         PendingIntent pi = PendingIntent.getBroadcast(this, 7, new Intent(this, WakeReceiver.class),
@@ -170,6 +173,18 @@ public class HermesService extends Service {
         } catch (SecurityException e) {
             am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi);
         }
+    }
+
+    /**
+     * Alarms die with the app (update, force-stop, reboot), and the ticker that would report the time again is
+     * frozen in Doze, so a scheduled job could wait for hours. Re-arm the last reported time from storage; one
+     * that already passed (up to 6 h ago) wakes the phone now so the ticker catches up.
+     */
+    void rearmWake() {
+        long at = getSharedPreferences("hermes", MODE_PRIVATE).getLong("wake_at", 0);
+        long now = System.currentTimeMillis();
+        if (at > now) scheduleWake(at / 1000.0);
+        else if (at > now - 6 * 3600_000L) wakeForCron();
     }
 
     @Override

@@ -243,4 +243,4 @@ in `web/`, and rebuild.
 MIT, see `LICENSE`. `web/vendor/hermes-shared` is copied from [NousResearch/hermes-agent](https://github.com/NousResearch/hermes-agent)
 (MIT, Copyright Nous Research), see `THIRD_PARTY.md`. "Hermes" and the Hermes Agent name belong to their owners.
 
-Contributions and bug reports are welcome. The tests in the Tests section run without a phone except `tools/e2e.py`.
+Contributions and bug reports are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md). The tests in the Tests section run without a phone except `tools/e2e.py`.

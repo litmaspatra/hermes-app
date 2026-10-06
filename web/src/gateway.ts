@@ -1,3 +1,4 @@
+import { btwDone, openBtw } from './btw'
 import { markSeen, noteSessions } from './unread'
 import { rememberPrompt } from './recent'
 import { api } from './api'
@@ -558,6 +559,11 @@ export async function sendPrompt(text: string): Promise<void> {
   let a = getState().active
   if (!a) a = await newSession()
 
+  const btw = /^\/btw(?:\s+([\s\S]*))?$/i.exec(trimmed)
+  if (btw) {
+    openBtw(btw[1] || '')
+    return
+  }
   if (trimmed.startsWith('/')) {
     await runSlash(a, trimmed)
     return
@@ -1090,8 +1096,10 @@ client.onEvent((ev: GatewayEvent) => {
       // Background self-improvement review (skills / memory learned from this chat), as Desktop shows it.
       pushItem({ kind: 'notice', id: newId('n'), text: String(payload.text || ''), level: 'info' })
       break
-    case 'background.complete':
     case 'btw.complete':
+      if (btwDone(String(payload.task_id || ''), String(payload.text || ''))) break
+    // falls through: not ours, show it as a notice
+    case 'background.complete':
       pushItem({ kind: 'notice', id: newId('n'), text: String(payload.text || payload.summary || 'Background task finished'), level: 'info' })
       break
     default:

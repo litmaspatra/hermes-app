@@ -10,6 +10,7 @@ import { RequestSheet } from './components/RequestSheet'
 import { ChatMenuSheet, CommandsSheet, DraftMenuSheet, ModelSheet, RollbackSheet, SessionActionsSheet, StatusSheet } from './components/Sheets'
 import { startActivityPolling } from './activity'
 import { DialogHost } from './dialog'
+import { BtwSheet } from './components/Btw'
 import { CanvasPanel } from './components/Canvas'
 import { openCanvas, startCanvasSync, useCanvas } from './canvas'
 import { backTop } from './backstack'
@@ -642,6 +643,7 @@ export function App() {
       {sheet === 'rollback' && <RollbackSheet />}
       {request && <RequestSheet key={request.id} req={request} />}
       <CanvasPanel />
+      <BtwSheet />
       <DialogHost />
       <div className="toasts">
         {toasts.map(t => (

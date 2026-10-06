@@ -16,8 +16,8 @@
 </p>
 
 <p align="center">
-  <a href="docs/hermes-mobile-demo.mp4"><img src="docs/img/demo-preview.gif" alt="Watch the 2 minute demo" width="300"></a><br>
-  <a href="docs/hermes-mobile-demo.mp4"><b>▶ Watch the 2 minute demo</b></a>
+  <a href="https://x.com/markkeeper2/status/2106873833978540280"><img src="docs/img/demo-preview.gif" alt="Watch the 2 minute demo" width="300"></a><br>
+  <a href="https://x.com/markkeeper2/status/2106873833978540280"><b>𝕏 See the release post</b></a>
 </p>
 
 > Unofficial community project. Not affiliated with or endorsed by Nous Research. Hermes itself is never patched.

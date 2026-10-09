@@ -1,0 +1,15 @@
+#!/data/data/com.termux/files/usr/bin/bash
+# Run the real Hermes CLI inside Debian from Termux.
+# No shell interpolation of user arguments; no package changes.
+set -euo pipefail
+if ! command -v proot-distro >/dev/null 2>&1; then
+  echo "Hermes Mobile: proot-distro is missing in Termux" >&2
+  exit 127
+fi
+# Inside Debian, login shell establishes Hermes's own PATH and environment.
+# Passing arguments to bash -c after '--' preserves spaces, quotes and symbols.
+if [ "$#" -eq 0 ]; then
+  exec proot-distro login debian -- bash -lc 'export PATH="$HOME/.local/bin:$PATH"; exec hermes' 
+else
+  exec proot-distro login debian -- bash -lc 'export PATH="$HOME/.local/bin:$PATH"; exec hermes "$@"' hermes "$@"
+fi

@@ -60,3 +60,41 @@ jobs:
           path: ~/.cache/hermes-mobile
           key: android-all-16
       - run: tools/java-check.sh
+
+  development-apk:
+    name: Signed development APK
+    runs-on: ubuntu-latest
+    needs: [android]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Install SDK platform and build tools
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-36" "build-tools;35.0.0"
+      - name: Install web dependencies
+        run: cd web && npm ci
+      - name: Build development APK
+        env:
+          VERSION_NAME: 0.1.0-dev
+          VERSION_CODE: '10001'
+        run: |
+          mkdir -p "$HOME/.android"
+          export ANDROID_HOME="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          bash android/build.sh
+          test -s android/build/hermes-mobile.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hermes-mobile-development-apk
+          path: android/build/hermes-mobile.apk
+          if-no-files-found: error
+          retention-days: 14

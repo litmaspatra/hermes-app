@@ -9,7 +9,7 @@ import { api, qs, refreshLogins } from '../api'
 import { REASONING_EFFORT_VALUES } from '@hermes/shared/reasoning-effort'
 import { errText, loadDefaultModel, loadProfiles, reconnectNow } from '../gateway'
 import { getState, setState, toast, useStore } from '../store'
-import { appVersion, haptic } from '../bridge'
+import { appVersion, copyText, haptic } from '../bridge'
 import { checkForUpdate, startUpdate, useUpdate } from '../update'
 import { checkHermes, compat, useHermesBuild } from '../hermes-update'
 import { ScreenShell, Sheet, Status, useLoader } from './Screens'
@@ -776,8 +776,31 @@ function AppearancePage() {
 
 // ── screen: a hub of grouped rows, each opening its own page ─
 
-type Page = 'hub' | 'appearance' | 'voice' | 'models' | 'accounts' | 'keys' | 'config'
-const PAGE_TITLE: Record<Page, string> = { hub: 'Settings', appearance: 'Appearance', voice: 'Voice', models: 'Default models', accounts: 'Subscriptions & accounts', keys: 'API keys', config: 'Advanced settings' }
+type Page = 'hub' | 'appearance' | 'voice' | 'models' | 'accounts' | 'keys' | 'config' | 'integrations'
+const PAGE_TITLE: Record<Page, string> = { hub: 'Settings', appearance: 'Appearance', voice: 'Voice', models: 'Default models', accounts: 'Subscriptions & accounts', keys: 'API keys', config: 'Advanced settings', integrations: 'Local integrations' }
+
+/** Guidance only: no remote execution surface is exposed to the WebView. */
+function IntegrationsPage() {
+  const items = [
+    { name: 'FastBrain', details: 'Standalone local command routing in Termux. Hermes interception is not enabled.', command: 'bash ~/hermes-mobile/phone/install-fastbrain.sh --install' },
+    { name: 'Hindsight Lite', details: 'Memory provider installed into Debian Hermes. Restart Hermes after installation.', command: 'bash ~/hermes-mobile/phone/install-hindsight-lite.sh --install' }
+  ]
+  return (
+    <>
+      <Section title="Optional services" footer="Copy only. No installer or service is launched by this screen.">
+        {items.map(item => (
+          <div key={item.name} className="pad">
+            <div className="set-title">{item.name}</div>
+            <div className="dim small">{item.details}</div>
+            <div className="dim small">Not checked — service health API is not connected</div>
+            <button className="btn" onClick={() => void copyText(item.command).then(() => toast('Command copied. Review and run it in Termux.')).catch(() => toast('Could not copy command', 'error'))}>Copy install command</button>
+          </div>
+        ))}
+      </Section>
+      <Section title="Safety"><div className="pad dim small">Both installs are optional. MiniLM, automatic routing and background startup stay disabled. Install Hermes Mobile first.</div></Section>
+    </>
+  )
+}
 
 function Hub({ go }: { go: (p: Page) => void }) {
   const conn = useStore(s => s.conn)
@@ -800,6 +823,9 @@ function Hub({ go }: { go: (p: Page) => void }) {
         <Row icon="👤" tone="green" title="Subscriptions & accounts" sub="ChatGPT, Claude, Grok, Nous Portal sign-ins" chevron onClick={() => go('accounts')} />
         <Row icon="🔑" tone="blue" title="API keys" sub="Providers and tools" chevron onClick={() => go('keys')} />
         <Row icon="⚙️" tone="gray" title="Advanced settings" sub="Every Hermes option" chevron onClick={() => go('config')} />
+      </Section>
+      <Section title="Integrations">
+        <Row icon="🧩" tone="teal" title="Local integrations" sub="FastBrain and Hindsight Lite setup" chevron onClick={() => go('integrations')} />
       </Section>
       <Section title="Connection">
         <Row icon="📶" tone="green" title="Status" value={connLabel} chevron onClick={() => setState({ sheet: 'status' })} />
@@ -872,6 +898,7 @@ export function SettingsScreen() {
     <ScreenShell title={PAGE_TITLE[page]} onBack={page === 'hub' ? undefined : () => setPage('hub')}>
       {page === 'hub' && <Hub go={setPage} />}
       {page === 'appearance' && <AppearancePage />}
+      {page === 'integrations' && <IntegrationsPage />}
       {page === 'voice' && <VoiceSettings />}
       {page === 'models' && <ModelsTab />}
       {page === 'accounts' && (

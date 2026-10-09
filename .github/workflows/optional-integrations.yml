@@ -1,0 +1,27 @@
+name: Optional integration script checks
+on:
+  push:
+    branches: [feature/mobile-reliability-integrations]
+  pull_request:
+  workflow_dispatch:
+jobs:
+  shell-syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check installation and service scripts
+        run: |
+          bash -n phone/bootstrap.sh
+          bash -n phone/install.sh
+          bash -n phone/optional-service.sh
+          bash -n phone/install-hindsight-lite.sh
+          bash -n phone/integration-doctor.sh
+      - name: Optional controller rejects unknown actions
+        run: |
+          if bash phone/optional-service.sh invalid fastbrain-router; then
+            echo "Unexpected acceptance of invalid action"
+            exit 1
+          fi
+      - name: Hindsight installation is opt-in
+        run: |
+          bash phone/install-hindsight-lite.sh

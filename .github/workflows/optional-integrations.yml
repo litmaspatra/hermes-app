@@ -15,6 +15,7 @@ jobs:
           bash -n phone/install.sh
           bash -n phone/optional-service.sh
           bash -n phone/install-hindsight-lite.sh
+          bash -n phone/install-fastbrain.sh
           bash -n phone/integration-doctor.sh
       - name: Optional controller rejects unknown actions
         run: |
@@ -25,3 +26,4 @@ jobs:
       - name: Hindsight installation is opt-in
         run: |
           bash phone/install-hindsight-lite.sh
+          bash phone/install-fastbrain.sh

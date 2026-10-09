@@ -19,8 +19,24 @@ here=""
 if [ -z "$here" ] || [ ! -d "$here/hermes-plugin/hermes-mobile" ]; then
   echo "0/5 Getting Hermes Mobile into ~/hermes-mobile"
   command -v git >/dev/null || pkg install -y git
-  if [ -d "$HOME/hermes-mobile/.git" ]; then git -C "$HOME/hermes-mobile" pull -q --ff-only
-  else git clone -q --depth 1 "$REPO.git" "$HOME/hermes-mobile"; fi
+  if [ -d "$HOME/hermes-mobile/.git" ]; then
+    origin=$(git -C "$HOME/hermes-mobile" remote get-url origin)
+    case "$origin" in "$REPO"|"$REPO.git") ;; *)
+      die "Existing ~/hermes-mobile comes from $origin; refusing to overwrite or change its origin. Use a clean clone or matching HM_MOBILE_REPO."
+      ;; esac
+    if [ -n "${HM_MOBILE_REF:-}" ]; then
+      git -C "$HOME/hermes-mobile" fetch -q --depth 1 origin "$HM_MOBILE_REF"
+      git -C "$HOME/hermes-mobile" checkout -q --detach FETCH_HEAD
+    else
+      git -C "$HOME/hermes-mobile" pull -q --ff-only
+    fi
+  else
+    if [ -n "${HM_MOBILE_REF:-}" ]; then
+      git clone -q --depth 1 --branch "$HM_MOBILE_REF" "$REPO.git" "$HOME/hermes-mobile"
+    else
+      git clone -q --depth 1 "$REPO.git" "$HOME/hermes-mobile"
+    fi
+  fi
   here="$HOME/hermes-mobile"
 fi
 

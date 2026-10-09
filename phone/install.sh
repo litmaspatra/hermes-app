@@ -5,7 +5,7 @@
 # It lets the app start Hermes, installs the Hermes Mobile plugin into Debian and the supervisor script into ~/bin,
 # then downloads the app and opens Android's installer. Safe to run again (it just refreshes everything).
 set -e
-REPO="https://github.com/omarqaterge/hermes-mobile-app"
+REPO="${HM_MOBILE_REPO:-https://github.com/omarqaterge/hermes-mobile-app}"
 PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
 ROOT="$PREFIX/var/lib/proot-distro/containers/debian/rootfs/root"
 die() { echo "ERROR: $*" >&2; exit 1; }

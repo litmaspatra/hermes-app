@@ -16,6 +16,8 @@ jobs:
           bash -n phone/optional-service.sh
           bash -n phone/install-hindsight-lite.sh
           bash -n phone/install-fastbrain.sh
+          bash -n phone/hermes
+          bash -n phone/install-hermes-command.sh
           bash -n phone/integration-doctor.sh
       - name: Compile dashboard integration API\n        run: |\n          python3 -m py_compile hermes-plugin/hermes-mobile/dashboard/plugin_api.py\n      - name: Optional controller rejects unknown actions
         run: |
@@ -23,6 +25,13 @@ jobs:
             echo "Unexpected acceptance of invalid action"
             exit 1
           fi
+      - name: CLI installer never overwrites an existing command
+        run: | 
+          PREFIX=$(mktemp -d)
+          mkdir -p "$PREFIX/bin"
+          echo reserved > "$PREFIX/bin/hermes"
+          if PREFIX="$PREFIX" bash phone/install-hermes-command.sh; then exit 1; fi
+          test "$(cat "$PREFIX/bin/hermes")" = reserved
       - name: Hindsight installation is opt-in
         run: |
           bash phone/install-hindsight-lite.sh

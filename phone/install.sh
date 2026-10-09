@@ -51,6 +51,13 @@ mkdir -p "$HOME/bin"
 cp "$here/phone/hermes-services" "$HOME/bin/hermes-services"
 chmod +x "$HOME/bin/hermes-services"
 
+# Optional Termux command: delegates to Debian and never replaces a different CLI.
+if [ -f "$here/phone/install-hermes-command.sh" ]; then
+  if ! bash "$here/phone/install-hermes-command.sh"; then
+    echo "Skipped Termux hermes shortcut; Hermes Mobile setup can continue."
+  fi
+fi
+
 echo "3/5 Installing the Hermes Mobile plugin"
 mkdir -p "$ROOT/.hermes/plugins" "$ROOT/.hermes/scripts"
 rm -rf "$ROOT/.hermes/plugins/hermes-mobile"

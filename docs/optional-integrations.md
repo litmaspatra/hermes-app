@@ -76,3 +76,18 @@ bash hm.sh
 
 The Android APK is **not** produced by the bootstrap script. A rebuilt APK needs
 its own signing key and cannot update the upstream signed app directly.
+
+## Fresh install commands (explicit, separate)
+
+From the cloned **development branch** in Termux, after core Hermes Mobile is healthy:
+
+```bash
+bash phone/install-fastbrain.sh             # preview, no changes
+bash phone/install-fastbrain.sh --install   # requires Python 3.13 already present
+bash phone/install-hindsight-lite.sh        # preview, no changes
+bash phone/install-hindsight-lite.sh --install
+```
+
+FastBrain's installer runs its standalone doctor but **does not** enable the Hermes pre-router, MiniLM, or any start-at-boot service. Hindsight installs a memory provider in Debian and edits the memory-provider selection in Hermes; **restart Hermes** after completion. Both installations are user-triggered and neither executes from the normal Hermes Mobile bootstrap.
+
+At present the app has **no settings UI** for these integrations. Hindsight Lite auto-recall and FastBrain routing must be validated separately before enabling interception of chat turns.

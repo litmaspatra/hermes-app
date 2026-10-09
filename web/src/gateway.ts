@@ -53,7 +53,6 @@ let started = false
 client.onState(conn => {
   setState({ conn })
   if (conn === 'open') {
-    aliveAt = Date.now()
     attempt = 0
     setState({ connDetail: '' })
   }

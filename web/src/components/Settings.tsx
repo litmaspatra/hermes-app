@@ -780,24 +780,53 @@ type Page = 'hub' | 'appearance' | 'voice' | 'models' | 'accounts' | 'keys' | 'c
 const PAGE_TITLE: Record<Page, string> = { hub: 'Settings', appearance: 'Appearance', voice: 'Voice', models: 'Default models', accounts: 'Subscriptions & accounts', keys: 'API keys', config: 'Advanced settings', integrations: 'Local integrations' }
 
 /** Guidance only: no remote execution surface is exposed to the WebView. */
+interface IntegrationInventory {
+  hindsight: { installed: boolean; configured: boolean; selected: boolean }
+  fastbrain: {
+    router: { installed: boolean; pid_recorded: boolean; socket_present: boolean; running: null }
+    minilm: { installed: boolean; pid_recorded: boolean; socket_present: boolean; running: null }
+  }
+  note: string
+}
+
 function IntegrationsPage() {
+  const [inventory, setInventory] = useState<IntegrationInventory | null>(null)
+  const [error, setError] = useState('')
+  const [refresh, setRefresh] = useState(0)
+  useEffect(() => {
+    let alive = true
+    api<IntegrationInventory>('GET', '/api/plugins/hermes-mobile/integrations', undefined, { profile: false })
+      .then(data => { if (alive) { setInventory(data); setError('') } })
+      .catch(e => { if (alive) setError(errText(e)) })
+    return () => { alive = false }
+  }, [refresh])
   const items = [
-    { name: 'FastBrain', details: 'Standalone local command routing in Termux. Hermes interception is not enabled.', command: 'bash ~/hermes-mobile/phone/install-fastbrain.sh --install' },
-    { name: 'Hindsight Lite', details: 'Memory provider installed into Debian Hermes. Restart Hermes after installation.', command: 'bash ~/hermes-mobile/phone/install-hindsight-lite.sh --install' }
+    {
+      name: 'FastBrain', details: 'Standalone local command routing in Termux. Hermes interception is not enabled.',
+      command: 'bash ~/hermes-mobile/phone/install-fastbrain.sh --install',
+      status: inventory ? (inventory.fastbrain.router.installed ? 'Installed · process health unverified' : 'Not detected') : 'Unknown'
+    },
+    {
+      name: 'Hindsight Lite', details: 'Memory provider installed into Debian Hermes. Restart Hermes after installation.',
+      command: 'bash ~/hermes-mobile/phone/install-hindsight-lite.sh --install',
+      status: inventory ? (inventory.hindsight.selected ? 'Selected as Hermes memory provider' : inventory.hindsight.installed ? 'Installed · not selected' : 'Not detected') : 'Unknown'
+    }
   ]
   return (
     <>
       <Section title="Optional services" footer="Copy only. No installer or service is launched by this screen.">
+        {error && <div className="notice notice-error">Status unavailable: {error}</div>}
         {items.map(item => (
           <div key={item.name} className="pad">
             <div className="set-title">{item.name}</div>
             <div className="dim small">{item.details}</div>
-            <div className="dim small">Not checked — service health API is not connected</div>
+            <div className="dim small">{item.status}</div>
             <button className="btn" onClick={() => void copyText(item.command).then(() => toast('Command copied. Review and run it in Termux.')).catch(() => toast('Could not copy command', 'error'))}>Copy install command</button>
           </div>
         ))}
+        <div className="pad"><button className="btn" onClick={() => setRefresh(n => n + 1)}>Refresh status</button></div>
       </Section>
-      <Section title="Safety"><div className="pad dim small">Both installs are optional. MiniLM, automatic routing and background startup stay disabled. Install Hermes Mobile first.</div></Section>
+      <Section title="Safety"><div className="pad dim small">Status is advisory. No remote command execution, no automatic MiniLM, no background wake lock. FastBrain's running state is not verified by this screen.</div></Section>
     </>
   )
 }

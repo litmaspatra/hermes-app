@@ -17,7 +17,7 @@ jobs:
           bash -n phone/install-hindsight-lite.sh
           bash -n phone/install-fastbrain.sh
           bash -n phone/integration-doctor.sh
-      - name: Optional controller rejects unknown actions
+      - name: Compile dashboard integration API\n        run: |\n          python3 -m py_compile hermes-plugin/hermes-mobile/dashboard/plugin_api.py\n      - name: Optional controller rejects unknown actions
         run: |
           if bash phone/optional-service.sh invalid fastbrain-router; then
             echo "Unexpected acceptance of invalid action"

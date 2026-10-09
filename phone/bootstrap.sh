@@ -79,8 +79,18 @@ fi
 deb "hermes --version | grep Hermes"
 
 step plugin "Hermes Mobile plugin and supervisor"
-curl -fsSL https://raw.githubusercontent.com/omarqaterge/hermes-mobile-app/main/phone/install.sh -o "$HOME/hm-install.sh"
-HM_NO_APK=1 bash "$HOME/hm-install.sh"
+# The bootstrap defaults to upstream but can follow a reviewed fork/ref.
+# Never evaluate an unverified installer through a curl pipe.
+HM_MOBILE_REPO="${HM_MOBILE_REPO:-https://github.com/omarqaterge/hermes-mobile-app}"
+HM_MOBILE_REF="${HM_MOBILE_REF:-main}"
+case "$HM_MOBILE_REPO" in
+  https://github.com/*/*) ;;
+  *) echo "HMSETUP FAIL plugin (invalid HM_MOBILE_REPO URL)" >&2; exit 2 ;;
+esac
+repo_path="${HM_MOBILE_REPO#https://github.com/}"
+repo_path="${repo_path%.git}"
+curl -fsSL "https://raw.githubusercontent.com/$repo_path/$HM_MOBILE_REF/phone/install.sh" -o "$HOME/hm-install.sh"
+HM_NO_APK=1 HM_MOBILE_REPO="$HM_MOBILE_REPO" HM_MOBILE_REF="$HM_MOBILE_REF" bash "$HOME/hm-install.sh"
 # Termux:Boot (if installed) starts Hermes after a reboot.
 mkdir -p "$HOME/.termux/boot"
 printf '#!/data/data/com.termux/files/usr/bin/bash\n~/bin/hermes-services\n' > "$HOME/.termux/boot/10-hermes"

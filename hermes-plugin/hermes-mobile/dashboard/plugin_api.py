@@ -71,6 +71,50 @@ def _snapshot(store, target: str) -> dict:
     }
 
 
+# Read-only optional integration inventory. The dashboard is inside Debian, and the
+# Termux home is bind-visible in proot. Never execute commands from this API.
+@router.get("/integrations")
+async def get_integrations():
+    import os
+
+    hermes_home = _home(None)
+    hindsight_pkg = hermes_home / "plugins" / "hindsight-lite"
+    hindsight_cfg = hermes_home / "hindsight-lite" / "config.json"
+    try:
+        import yaml
+        cfg = yaml.safe_load((hermes_home / "config.yaml").read_text()) or {}
+        selected = (cfg.get("memory") or {}).get("provider")
+    except Exception:
+        selected = None
+
+    termux = Path("/data/data/com.termux/files/home")
+    fb = termux / ".fastbrain"
+    def service(name: str) -> dict:
+        folder = fb / name
+        pidfile = folder / (name + ".pid" if name != "router" else "router.pid")
+        sock = folder / (name + ".sock" if name != "router" else "router.sock")
+        found = (fb / "fastbrain").exists()
+        pid = None
+        try:
+            raw = pidfile.read_text().strip()
+            if raw.isdecimal():
+                pid = int(raw)
+                # Do not signal processes: proot PID namespaces and permissions
+                # can make this test inaccurate. Treat presence as unverified.
+        except (OSError, ValueError):
+            pass
+        return {"installed": found, "pid_recorded": pid is not None,
+                "socket_present": sock.is_socket(), "running": None}
+
+    return {
+        "hindsight": {"installed": (hindsight_pkg / "plugin.yaml").is_file(),
+                      "configured": hindsight_cfg.is_file(),
+                      "selected": selected == "hindsight-lite"},
+        "fastbrain": {"router": service("router"), "minilm": service("minilm")},
+        "note": "FastBrain process liveness is not verified from Debian; status is advisory."
+    }
+
+
 @router.get("/memory")
 async def get_memory(profile: Optional[str] = None):
     store = _store(profile)

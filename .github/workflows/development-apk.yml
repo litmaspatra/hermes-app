@@ -1,0 +1,50 @@
+name: Development APK
+on:
+  push:
+    branches: [feature/mobile-reliability-integrations]
+  workflow_dispatch:
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install Android SDK
+        run: |
+          export ANDROID_HOME="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager 2>/dev/null | head -n 1)
+          test -x "$SDKMANAGER" || { echo "Android SDK command line tools missing"; exit 1; }
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platforms;android-36" "build-tools;35.0.0"
+      - name: Install web dependencies
+        run: cd web && npm ci
+      - name: Check and build web
+        run: cd web && npm run build
+      - name: Create development signing directory
+        run: mkdir -p "$HOME/.android"
+      - name: Build signed development APK
+        env:
+          VERSION_NAME: 0.1.0-dev
+          VERSION_CODE: '10001'
+        run: |
+          export ANDROID_HOME="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          bash android/build.sh
+          test -s android/build/hermes-mobile.apk
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: hermes-mobile-development-apk
+          path: android/build/hermes-mobile.apk
+          if-no-files-found: error
+          retention-days: 14

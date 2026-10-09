@@ -5,7 +5,7 @@
 # It lets the app start Hermes, installs the Hermes Mobile plugin into Debian and the supervisor script into ~/bin,
 # then downloads the app and opens Android's installer. Safe to run again (it just refreshes everything).
 set -e
-REPO="https://github.com/omarqaterge/hermes-mobile-app"
+REPO="${HM_MOBILE_REPO:-https://github.com/omarqaterge/hermes-mobile-app}"
 PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
 ROOT="$PREFIX/var/lib/proot-distro/containers/debian/rootfs/root"
 die() { echo "ERROR: $*" >&2; exit 1; }
@@ -19,8 +19,24 @@ here=""
 if [ -z "$here" ] || [ ! -d "$here/hermes-plugin/hermes-mobile" ]; then
   echo "0/5 Getting Hermes Mobile into ~/hermes-mobile"
   command -v git >/dev/null || pkg install -y git
-  if [ -d "$HOME/hermes-mobile/.git" ]; then git -C "$HOME/hermes-mobile" pull -q --ff-only
-  else git clone -q --depth 1 "$REPO.git" "$HOME/hermes-mobile"; fi
+  if [ -d "$HOME/hermes-mobile/.git" ]; then
+    origin=$(git -C "$HOME/hermes-mobile" remote get-url origin)
+    case "$origin" in "$REPO"|"$REPO.git") ;; *)
+      die "Existing ~/hermes-mobile comes from $origin; refusing to overwrite or change its origin. Use a clean clone or matching HM_MOBILE_REPO."
+      ;; esac
+    if [ -n "${HM_MOBILE_REF:-}" ]; then
+      git -C "$HOME/hermes-mobile" fetch -q --depth 1 origin "$HM_MOBILE_REF"
+      git -C "$HOME/hermes-mobile" checkout -q --detach FETCH_HEAD
+    else
+      git -C "$HOME/hermes-mobile" pull -q --ff-only
+    fi
+  else
+    if [ -n "${HM_MOBILE_REF:-}" ]; then
+      git clone -q --depth 1 --branch "$HM_MOBILE_REF" "$REPO.git" "$HOME/hermes-mobile"
+    else
+      git clone -q --depth 1 "$REPO.git" "$HOME/hermes-mobile"
+    fi
+  fi
   here="$HOME/hermes-mobile"
 fi
 
@@ -34,6 +50,13 @@ echo "2/5 Installing the supervisor script (~/bin/hermes-services)"
 mkdir -p "$HOME/bin"
 cp "$here/phone/hermes-services" "$HOME/bin/hermes-services"
 chmod +x "$HOME/bin/hermes-services"
+
+# Optional Termux command: delegates to Debian and never replaces a different CLI.
+if [ -f "$here/phone/install-hermes-command.sh" ]; then
+  if ! bash "$here/phone/install-hermes-command.sh"; then
+    echo "Skipped Termux hermes shortcut; Hermes Mobile setup can continue."
+  fi
+fi
 
 echo "3/5 Installing the Hermes Mobile plugin"
 mkdir -p "$ROOT/.hermes/plugins" "$ROOT/.hermes/scripts"

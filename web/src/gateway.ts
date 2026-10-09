@@ -53,7 +53,6 @@ let started = false
 client.onState(conn => {
   setState({ conn })
   if (conn === 'open') {
-    aliveAt = Date.now()
     attempt = 0
     setState({ connDetail: '' })
   }
@@ -116,43 +115,48 @@ export async function connectionAlive(): Promise<boolean> {
 }
 
 // ── liveness ────────────────────────────────────────────────
-// The client's built-in heartbeat dropped the socket after 45 s without an inbound frame, judged by a timer. While
-// the app is hidden Chromium freezes the page (~1 min in), so on return the first late tick saw a minute of
-// "silence" and closed a healthy socket: "offline", a reconnect, and a reload of the chat mid-turn. This one gives
-// the socket a fresh window after a frozen gap, and pings as soon as the page is shown again.
+// Android may freeze WebView timers while the app sleeps. Never treat elapsed
+// wall-clock time alone as a dead socket: probe before invalidating it.
+// Allow only one outstanding ping, to avoid queues and false heartbeat failures.
 const BEAT_MS = 15_000
-const DEADLINE_MS = 45_000
-let aliveAt = Date.now()
-let lastBeat = Date.now()
+const PING_TIMEOUT_MS = 10_000
+let pingInFlight = false
+let pingGeneration = 0
 
-client.onAny(() => {
-  aliveAt = Date.now()
+client.onState(conn => {
+  if (conn !== 'open') pingGeneration++
 })
 
-setInterval(() => {
-  const now = Date.now()
-  const slept = now - lastBeat > BEAT_MS * 2
-  lastBeat = now
-  if (getState().conn !== 'open') return
-  if (slept) aliveAt = now
-  else if (now - aliveAt >= DEADLINE_MS) {
-    client.invalidate('WebSocket heartbeat timed out')
-    return
+async function probeSocket(): Promise<boolean> {
+  if (getState().conn !== 'open') return false
+  if (pingInFlight) return true // a probe is already checking the connection
+  pingInFlight = true
+  const generation = pingGeneration
+  try {
+    await rpc('gateway.ping', {}, PING_TIMEOUT_MS)
+    return true
+  } catch {
+    // Background WebViews may be frozen: avoid discarding an in-flight turn
+    // due solely to a timeout while Android has paused this page.
+    if (generation === pingGeneration && getState().conn === 'open' &&
+        document.visibilityState === 'visible') {
+      client.invalidate('WebSocket ping failed')
+    }
+    return false
+  } finally {
+    pingInFlight = false
   }
-  rpc('gateway.ping', {}, DEADLINE_MS).then(
-    () => (aliveAt = Date.now()),
-    () => {}
-  )
+}
+
+setInterval(() => {
+  // Hidden pages have no reliable timer budget; resume performs an active probe.
+  if (document.visibilityState === 'visible') void probeSocket()
 }, BEAT_MS)
 
-/** Back in front: a socket that died while the page was frozen is replaced now, not after the deadline. */
+/** Back in front: test the existing socket before replacing it. */
 async function checkSocket(): Promise<void> {
   if (getState().conn !== 'open') return
-  try {
-    await rpc('gateway.ping', {}, 10_000)
-  } catch {
-    if (getState().conn === 'open') client.invalidate('WebSocket closed')
-  }
+  await probeSocket()
 }
 
 /** Keep a message for `chat` in the outbox and reconnect; afterConnect's flushOutbox sends it. */

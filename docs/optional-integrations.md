@@ -45,3 +45,36 @@ for `phone/install.sh`, and run only after reviewing the script.
 6. Reboot, crashes, partial installation and uninstall behavior.
 
 No provider token or credentials should be committed or printed in diagnostics.
+
+## Experimental manual service control
+
+`phone/optional-service.sh` supports read-only status and explicit starts/stops:
+
+```bash
+bash phone/optional-service.sh status fastbrain-router
+bash phone/optional-service.sh status fastbrain-minilm
+# Only after installing FastBrain's original scripts and marking executable:
+bash phone/optional-service.sh start fastbrain-router
+# Only after installing Hindsight Lite and preparing a start script:
+HINDSIGHT_LITE_START=/absolute/path/to/start-hindsight.sh bash phone/optional-service.sh start hindsight-lite
+```
+
+This does not install either service and does not prove that its HTTP endpoint is ready.
+It manages the launcher process only; if an upstream script daemonizes, use that
+project's own health/stop commands. The app currently has no UI for these services.
+
+## Development fork bootstrap
+
+For a clean phone, you can explicitly select the fork and review branch before
+executing its installer:
+
+```bash
+export HM_MOBILE_REPO=https://github.com/litmaspatra/hermes-app
+export HM_MOBILE_REF=feature/mobile-reliability-integrations
+curl -fsSL https://raw.githubusercontent.com/litmaspatra/hermes-app/feature/mobile-reliability-integrations/phone/bootstrap.sh -o hm.sh
+# Review hm.sh before running. This modifies Termux/Debian and installs Hermes.
+bash hm.sh
+```
+
+The Android APK is **not** produced by the bootstrap script. A rebuilt APK needs
+its own signing key and cannot update the upstream signed app directly.

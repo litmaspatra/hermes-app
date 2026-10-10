@@ -715,7 +715,9 @@ public class HermesService extends Service {
 
     /** Ticks the approval countdown once a second until answered or expired. */
     void tickApproval() {
+        final String approvalKey = session + ":" + requestId;
         synchronized (this) {
+            if (approvalInFlight.contains(approvalKey)) return;
             if (pendingApproval == null) return;
             // HyperOS drops the heads-up after ~5 s: pop it up again at 20 s and 40 s while unanswered.
             long elapsed = Math.max(1, pendingApproval.optLong("timeout", 60)) * 1000L - (approvalDeadline - System.currentTimeMillis());
@@ -775,6 +777,8 @@ public class HermesService extends Service {
 
     /** Only send an approval for the matching, unexpired notification request.
      * Detached-session 403 and state-conflict 409 are never treated as approval. */
+    private final java.util.Set<String> approvalInFlight = new java.util.HashSet<>();
+
     void answerApproval(Intent i) {
         final String session = i.getStringExtra("session");
         final String choice = i.getStringExtra("choice");
@@ -793,6 +797,7 @@ public class HermesService extends Service {
                         "Open Hermes to restore the conversation and review the request.", session, true));
                 return;
             }
+            approvalInFlight.add(approvalKey);
         }
         new Thread(() -> {
             String err = null;
@@ -817,6 +822,7 @@ public class HermesService extends Service {
             }
             final String failed = err;
             main.post(() -> {
+                synchronized (HermesService.this) { approvalInFlight.remove(approvalKey); }
                 if (failed == null) {
                     synchronized (HermesService.this) {
                         if (pendingApproval != null

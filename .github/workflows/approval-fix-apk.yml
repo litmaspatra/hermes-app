@@ -25,9 +25,21 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          yes | sdkmanager --licenses >/dev/null || true
-          echo "ANDROID_HOME=${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}" >> "$GITHUB_ENV"
-          sdkmanager "platforms;android-36" "build-tools;35.0.0"
+          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
+
+          SDKMANAGER_BIN="${SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$SDKMANAGER_BIN" ]; then
+            SDKMANAGER_BIN="$(command -v sdkmanager || true)"
+          fi
+          if [ -z "$SDKMANAGER_BIN" ]; then
+            echo "sdkmanager not found under $SDK_ROOT or PATH"
+            exit 1
+          fi
+
+          yes | "$SDKMANAGER_BIN" --licenses --sdk_root="$SDK_ROOT" >/dev/null || true
+          "$SDKMANAGER_BIN" --sdk_root="$SDK_ROOT" "platforms;android-36" "build-tools;35.0.0"
       - name: Build web interface
         working-directory: web
         run: npm ci

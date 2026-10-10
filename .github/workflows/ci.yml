@@ -65,11 +65,11 @@ jobs:
           node-version: '22'
           cache: npm
           cache-dependency-path: web/package-lock.json
-      - uses: android-actions/setup-android@v3
       - name: Install Android SDK dependencies
         run: |
           set -euo pipefail
-          sdkmanager "platforms;android-36" "build-tools;35.0.0"
+          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$SDK_ROOT" "platforms;android-36" "build-tools;35.0.0"
           echo "ANDROID_HOME=${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}" >> "$GITHUB_ENV"
       - name: Install web dependencies
         run: npm ci

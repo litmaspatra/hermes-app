@@ -65,6 +65,7 @@ jobs:
           node-version: '22'
           cache: npm
           cache-dependency-path: web/package-lock.json
+      - uses: android-actions/setup-android@v3
       - name: Install Android SDK dependencies
         run: |
           set -euo pipefail

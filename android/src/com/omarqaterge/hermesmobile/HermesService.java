@@ -769,16 +769,36 @@ public class HermesService extends Service {
                 .putExtra("request_id", e.optString("request_id", ""))
                 .putExtra("profile", e.optString("profile", ""))
                 .putExtra("choice", choice);
-        return PendingIntent.getService(this, (session + choice).hashCode(), i,
+        return PendingIntent.getService(this, (session + ":" + e.optString("request_id", "") + ":" + choice).hashCode(), i,
                 PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
     }
 
-    /** A notification button's answer: POST it to the plugin's /approve (approval.respond). */
+    /** Only send an approval for the matching, unexpired notification request.
+     * Detached-session 403 and state-conflict 409 are never treated as approval. */
+    private final java.util.Set<String> approvalInFlight = new java.util.HashSet<>();
+
     void answerApproval(Intent i) {
-        String session = i.getStringExtra("session");
-        String choice = i.getStringExtra("choice");
-        String t = tag("approval", session);
-        NotificationManager nm = getSystemService(NotificationManager.class);
+        final String session = i.getStringExtra("session");
+        final String choice = i.getStringExtra("choice");
+        final String requestId = i.getStringExtra("request_id");
+        final String t = tag("approval", session);
+        final NotificationManager nm = getSystemService(NotificationManager.class);
+        final String approvalKey = session + ":" + requestId;
+        synchronized (this) {
+            if (approvalInFlight.contains(approvalKey)) return;
+            if (pendingApproval == null
+                    || System.currentTimeMillis() >= approvalDeadline
+                    || session == null || session.isEmpty()
+                    || requestId == null || requestId.isEmpty()
+                    || !session.equals(pendingApproval.optString("session"))
+                    || !requestId.equals(pendingApproval.optString("request_id"))
+                    || !("once".equals(choice) || "session".equals(choice) || "deny".equals(choice))) {
+                postGrouped(nm, t, alert(CH_ALERT, "Approval no longer available",
+                        "Open Hermes to restore the conversation and review the request.", session, true));
+                return;
+            }
+            approvalInFlight.add(approvalKey);
+        }
         new Thread(() -> {
             String err = null;
             try {
@@ -786,28 +806,37 @@ public class HermesService extends Service {
                         .put("session", session)
                         .put("key", i.getStringExtra("key"))
                         .put("choice", choice)
-                        .put("request_id", i.getStringExtra("request_id"))
+                        .put("request_id", requestId)
                         .put("profile", i.getStringExtra("profile"));
                 String path = "/api/plugins/hermes-mobile/approve";
                 String[] res = MainActivity.rawHttp("POST", path, dashboardToken(false), body.toString());
-                if ("401".equals(res[0]) || "403".equals(res[0]))
-                    res = MainActivity.rawHttp("POST", path, dashboardToken(true), body.toString());
-                if (!res[0].startsWith("2")) err = "HTTP " + res[0];
+                // A 403 may mean a detached runtime, not an expired dashboard token.
+                // Never automatically replay a consequential approval.
+                if (!res[0].startsWith("2")) {
+                    if ("409".equals(res[0]) || "403".equals(res[0]))
+                        err = "Request expired or session detached (HTTP " + res[0] + ")";
+                    else err = "HTTP " + res[0];
+                }
             } catch (Exception ex) {
-                err = ex.getMessage();
+                err = "Connection failed";
             }
             final String failed = err;
             main.post(() -> {
+                synchronized (HermesService.this) { approvalInFlight.remove(approvalKey); }
                 if (failed == null) {
                     synchronized (HermesService.this) {
-                        pendingApproval = null;
-                        postStatus();
+                        if (pendingApproval != null
+                                && requestId.equals(pendingApproval.optString("request_id"))) {
+                            pendingApproval = null;
+                            postStatus();
+                            updateWake();
+                        }
                     }
                     nm.cancel(t, 2);
                     dropEmptySummary(nm, t);
                 } else {
-                    postGrouped(nm, t, alert(CH_ALERT, "Couldn't send your answer",
-                            "Open Hermes to answer (" + failed + ")", session, true));
+                    postGrouped(nm, t, alert(CH_ALERT, "Approval needs review",
+                            failed + ". Open Hermes to restore this conversation.", session, true));
                 }
             });
         }, "hermes-approve").start();

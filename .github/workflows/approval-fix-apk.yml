@@ -1,0 +1,45 @@
+name: Build approval-fix APK (test only)
+
+on:
+  push:
+    branches: [fix/approval-conflict-session]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Install Android SDK build tools and platform
+        shell: bash
+        run: |
+          set -euo pipefail
+          yes | sdkmanager --licenses >/dev/null || true
+          echo "ANDROID_HOME=${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}" >> "$GITHUB_ENV"
+          sdkmanager "platforms;android-36" "build-tools;35.0.0"
+      - name: Build web interface
+        working-directory: web
+        run: npm ci
+      - name: Build test APK
+        env:
+          VERSION_NAME: 0.7.99-approval-test
+          VERSION_CODE: '7099'
+        run: bash android/build.sh
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: hermes-mobile-approval-test-apk
+          path: android/build/hermes-mobile.apk
+          if-no-files-found: error
+          retention-days: 7

@@ -733,11 +733,13 @@ public class MainActivity extends Activity {
         visible = true;
         handler.removeCallbacks(sleepPage);
         if (!HermesService.running) HermesService.start(this);
-        // Pinned approval popups: the in-app sheet takes over, so none can be left stuck.
-        NotificationManager nm = getSystemService(NotificationManager.class);
-        for (android.service.notification.StatusBarNotification n : nm.getActiveNotifications())
-            if (n.getId() == 2 && n.getTag() != null && n.getTag().startsWith("approval:")) nm.cancel(n.getTag(), 2);
-        web.evaluateJavascript("window.hermesResume && window.hermesResume()", null);
+        // Keep approval notifications until the restored session has actually
+        // replayed its still-open request. A foreground WebView may be starting
+        // fresh or reconnecting; merely opening it is not approval ownership.
+        if (pageReady) {
+            openPendingSession();
+            web.evaluateJavascript("window.hermesResume && window.hermesResume()", null);
+        }
     }
 
     /** Dark icons on light bars and the reverse, decided from the page background. */

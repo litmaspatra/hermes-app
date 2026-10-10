@@ -60,3 +60,28 @@ jobs:
           path: ~/.cache/hermes-mobile
           key: android-all-16
       - run: tools/java-check.sh
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install Android SDK dependencies
+        run: |
+          set -euo pipefail
+          sdkmanager "platforms;android-36" "build-tools;35.0.0"
+          echo "ANDROID_HOME=${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}" >> "$GITHUB_ENV"
+      - name: Install web dependencies
+        run: npm ci
+        working-directory: web
+      - name: Package signed test APK
+        env:
+          VERSION_NAME: 0.7.99-approval-test
+          VERSION_CODE: '7099'
+        run: bash android/build.sh
+      - name: Upload test APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: hermes-mobile-approval-test-apk
+          path: android/build/hermes-mobile.apk
+          retention-days: 7
+          if-no-files-found: error

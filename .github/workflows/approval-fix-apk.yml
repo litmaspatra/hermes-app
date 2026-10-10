@@ -26,13 +26,13 @@ jobs:
         run: |
           set -euo pipefail
           yes | sdkmanager --licenses >/dev/null || true
+          echo "ANDROID_HOME=${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}" >> "$GITHUB_ENV"
           sdkmanager "platforms;android-36" "build-tools;35.0.0"
       - name: Build web interface
         working-directory: web
         run: npm ci
       - name: Build test APK
         env:
-          ANDROID_HOME: ${{ env.ANDROID_HOME }}
           VERSION_NAME: 0.7.99-approval-test
           VERSION_CODE: '7099'
         run: bash android/build.sh

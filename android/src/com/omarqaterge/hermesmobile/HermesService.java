@@ -785,7 +785,9 @@ public class HermesService extends Service {
         final String requestId = i.getStringExtra("request_id");
         final String t = tag("approval", session);
         final NotificationManager nm = getSystemService(NotificationManager.class);
+        final String approvalKey = session + ":" + requestId;
         synchronized (this) {
+            if (approvalInFlight.contains(approvalKey)) return;
             if (pendingApproval == null
                     || System.currentTimeMillis() >= approvalDeadline
                     || session == null || session.isEmpty()

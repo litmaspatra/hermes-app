@@ -716,7 +716,6 @@ public class HermesService extends Service {
     /** Ticks the approval countdown once a second until answered or expired. */
     void tickApproval() {
         synchronized (this) {
-            if (approvalInFlight.contains(approvalKey)) return;
             if (pendingApproval == null) return;
             // HyperOS drops the heads-up after ~5 s: pop it up again at 20 s and 40 s while unanswered.
             long elapsed = Math.max(1, pendingApproval.optLong("timeout", 60)) * 1000L - (approvalDeadline - System.currentTimeMillis());

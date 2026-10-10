@@ -715,7 +715,6 @@ public class HermesService extends Service {
 
     /** Ticks the approval countdown once a second until answered or expired. */
     void tickApproval() {
-        final String approvalKey = session + ":" + requestId;
         synchronized (this) {
             if (approvalInFlight.contains(approvalKey)) return;
             if (pendingApproval == null) return;

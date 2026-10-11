@@ -21,6 +21,8 @@ jobs:
           distribution: temurin
           java-version: 17
       - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
       - name: Install web dependencies
         working-directory: web
         run: npm ci

@@ -64,6 +64,7 @@ public class HermesService extends Service {
         lastStatus = "Ready";
         postStatus();
         updateWake();
+        notifyPageNeedChanged();
     }
     boolean lastWorking = false;
     String lastSub = null;
@@ -79,6 +80,8 @@ public class HermesService extends Service {
     static final String REMOTE_TEXT = "text";
     static final int SUMMARY_ID = 3;
     final Handler main = new Handler(Looper.getMainLooper());
+    final ApprovalQueue<JSONObject> approvals = new ApprovalQueue<>();
+    final java.util.Set<String> approvalInFlight = new java.util.HashSet<>();
 
     static void start(Context ctx) {
         try {
@@ -86,6 +89,28 @@ public class HermesService extends Service {
         } catch (Exception ignored) {
             // background-start restrictions: the app / Termux keeper will start it next time
         }
+    }
+
+    static void appVisibility(boolean visible) {
+        HermesService service = instance;
+        if (service != null) service.main.post(() -> service.onAppVisibility(visible));
+    }
+
+    static boolean needsPage() {
+        HermesService service = instance;
+        return service != null && (service.lastWorking || !service.approvals.isEmpty() || service.pendingAsk != null);
+    }
+
+    void onAppVisibility(boolean visible) {
+        if (!visible) {
+            for (ApprovalQueue.Entry<JSONObject> entry : approvals.snapshot()) postApprovalNotification(entry, true);
+        }
+        notifyPageNeedChanged();
+    }
+
+    void notifyPageNeedChanged() {
+        MainActivity activity = MainActivity.current;
+        if (activity != null) main.post(activity::ensureKeepAlive);
     }
 
     @Override
@@ -165,7 +190,7 @@ public class HermesService extends Service {
         long now = System.currentTimeMillis();
         long until = alarmAwakeUntil;
         if (lastWorking) until = Math.max(until, lastBeat + WORKING_TTL_MS + 5000);
-        if (pendingApproval != null) until = Math.max(until, approvalDeadline + 5000);
+        if (!approvals.isEmpty()) until = Math.max(until, approvals.maxDeadline() + 5000);
         try {
             if (wakeLock == null) {
                 wakeLock = getSystemService(PowerManager.class).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "hermes:working");
@@ -360,6 +385,7 @@ public class HermesService extends Service {
                 if (working) main.postDelayed(expireWorkingTask, WORKING_TTL_MS);
                 postStatus();
                 updateWake();
+                notifyPageNeedChanged();
                 return;
             }
             case "wake_at":
@@ -381,26 +407,19 @@ public class HermesService extends Service {
                 return;
             }
             case "approval": {
-                if (MainActivity.visible) return; // the app shows its own sheet
-                Notification.Builder b = alertBuilder(CH_ALERT, title, body, session, true);
-                // Answer right from the popup, like the in-app sheet.
-                b.addAction(approveAction(e, "once", "Allow once"));
-                if (e.optBoolean("allow_session", true)) b.addAction(approveAction(e, "session", "Allow session"));
-                b.addAction(approveAction(e, "deny", "Deny"));
-                // HyperOS hides the popup after ~5 s whatever we ask; the island chip keeps the
-                // same buttons (status notification) until the approval is answered.
-                boolean ticking = pendingApproval != null;
-                if (!ticking) lastReAlert = -1;
-                pendingApproval = e;
-                approvalDeadline = System.currentTimeMillis() + Math.max(1, e.optLong("timeout", 60)) * 1000L;
+                long received = System.currentTimeMillis();
+                boolean ticking = !approvals.isEmpty();
+                ApprovalQueue.Entry<JSONObject> entry = approvals.upsert(session,
+                        e.optString("request_id", ""), e.optString("command", ""), received,
+                        received + Math.max(1, e.optLong("timeout", 60)) * 1000L, e);
                 postStatus();
                 updateWake();
                 if (!ticking) main.postDelayed(this::tickApproval, 1000);
-                postGrouped(nm, tag(kind, session), b.build());
+                postApprovalNotification(entry, !MainActivity.visible);
+                notifyPageNeedChanged();
                 return;
             }
             case "ask": {
-                if (MainActivity.visible) return; // the app shows its own sheet
                 Notification.Builder b = alertBuilder(CH_ALERT, title, body, session, true);
                 // Answer in the notification; a question with choices offers them as quick replies.
                 org.json.JSONArray ch = e.optJSONArray("choices");
@@ -415,7 +434,8 @@ public class HermesService extends Service {
                 main.removeCallbacks(expireAskTask);
                 main.postDelayed(expireAskTask, ASK_TTL_MS);
                 postStatus();
-                postGrouped(nm, tag(kind, session), b.build());
+                if (!MainActivity.visible) postGrouped(nm, tag(kind, session), b.build());
+                notifyPageNeedChanged();
                 return;
             }
             case "reply":
@@ -444,11 +464,25 @@ public class HermesService extends Service {
                     pendingAsk = null;
                     main.removeCallbacks(expireAskTask);
                     postStatus();
+                    notifyPageNeedChanged();
                 }
-                if ("approval".equals(e.optString("what")) && pendingApproval != null) {
-                    pendingApproval = null;
+                if ("approval".equals(e.optString("what"))) {
+                    ApprovalQueue.Entry<JSONObject> removed = approvals.clearOldest(session, System.currentTimeMillis());
+                    if (removed != null) {
+                        String gone = approvalTag(removed);
+                        nm.cancel(gone, 2);
+                        dropEmptySummary(nm, gone);
+                        if (System.currentTimeMillis() > removed.deadline) {
+                            String command = removed.command;
+                            if (command.length() > 160) command = command.substring(0, 160);
+                            postGrouped(nm, tag("timeout", removed.key), alert(CH_ALERT, "Approval timed out",
+                                    "Hermes moved on without your answer" + (command.isEmpty() ? "" : ": " + command),
+                                    removed.session, false));
+                        }
+                    }
                     postStatus();
                     updateWake();
+                    notifyPageNeedChanged();
                 }
                 String t = tag(e.optString("what", "reply"), session);
                 nm.cancel(t, 2);
@@ -503,8 +537,8 @@ public class HermesService extends Service {
 
     Notification statusNotification(String text, String sub, boolean working) {
         boolean flash = flashUntil > System.currentTimeMillis();
-        if (flash && pendingApproval == null && pendingAsk == null) return flashNotification();
-        if (pendingApproval != null) return approvalNotification(sub);
+        if (flash && approvals.isEmpty() && pendingAsk == null) return flashNotification();
+        if (!approvals.isEmpty()) return approvalNotification(sub);
         if (pendingAsk != null) return askNotification(sub);
         // Idle = a slim green card on its own channel (so it can be minimised on its own); working = the gold Live Update.
         Notification.Builder b = new Notification.Builder(this, working ? CH_STATUS : CH_IDLE)
@@ -638,15 +672,18 @@ public class HermesService extends Service {
         if (pendingAsk != null) {
             pendingAsk = null;
             postStatus();
+            notifyPageNeedChanged();
         }
     };
 
     /** Waiting approval, as a Live Update: shield chip with a live countdown; expanded, the command
      * in monospace over a draining countdown bar (gold → amber → red) and coloured answer buttons. */
     Notification approvalNotification(String sub) {
-        JSONObject a = pendingApproval;
+        ApprovalQueue.Entry<JSONObject> entry = approvals.oldest();
+        if (entry == null) return statusNotification(lastStatus, sub, lastWorking);
+        JSONObject a = entry.value;
         long total = Math.max(1, a.optLong("timeout", 60)) * 1000L;
-        long left = Math.max(0, approvalDeadline - System.currentTimeMillis());
+        long left = Math.max(0, entry.deadline - System.currentTimeMillis());
         int secs = (int) Math.ceil(left / 1000.0);
         float frac = left / (float) total;
         int barColor = frac > 0.5f ? GOLD : frac > 0.2f ? AMBER : RED;
@@ -672,7 +709,7 @@ public class HermesService extends Service {
                 .setColor(barColor)
                 .setContentTitle("Hermes wants to run a command")
                 .setContentText(t)
-                .setSubText((sub != null ? sub + " · " : "") + "expires in " + secs + "s")
+                .setSubText((sub != null ? sub + " · " : "") + (secs > 0 ? "expires in " + secs + "s" : "still waiting"))
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)
                 .setShowWhen(false)
@@ -697,40 +734,50 @@ public class HermesService extends Service {
         return b.build();
     }
 
-    long approvalDeadline;
-    long lastReAlert = -1;
+    String approvalTag(ApprovalQueue.Entry<JSONObject> entry) {
+        String request = entry.requestId.isEmpty() ? entry.command : entry.requestId;
+        return tag("approval", entry.session + "|" + request);
+    }
 
-    void reAlertApproval() {
-        JSONObject e = pendingApproval;
-        if (e == null) return;
-        String session = e.optString("session", null);
+    String approvalTag(String session, String requestId, String command) {
+        String request = requestId == null || requestId.isEmpty() ? (command == null ? "" : command) : requestId;
+        return tag("approval", (session == null ? "" : session) + "|" + request);
+    }
+
+    void postApprovalNotification(ApprovalQueue.Entry<JSONObject> entry, boolean headsUp) {
+        JSONObject event = entry.value;
+        long left = Math.max(0, entry.deadline - System.currentTimeMillis());
+        int seconds = (int) Math.ceil(left / 1000.0);
+        Notification.Builder builder = alertBuilder(!MainActivity.visible || headsUp ? CH_ALERT : CH_STATUS,
+                event.optString("title", "Hermes approval"),
+                event.optString("body", event.optString("command", "Approval waiting")), entry.session, true)
+                .setOngoing(true)
+                .setAutoCancel(false)
+                .setOnlyAlertOnce(!headsUp)
+                .setSubText(seconds > 0 ? seconds + "s" : "still waiting");
+        builder.addAction(approveAction(event, "once", "Allow once"));
+        if (event.optBoolean("allow_session", true)) builder.addAction(approveAction(event, "session", "Allow session"));
+        builder.addAction(approveAction(event, "deny", "Deny"));
         NotificationManager nm = getSystemService(NotificationManager.class);
-        Notification.Builder b = alertBuilder(CH_ALERT, e.optString("title", "Hermes"), "Still waiting for your answer: " + e.optString("body", ""), session, true);
-        b.addAction(approveAction(e, "once", "Allow once"));
-        if (e.optBoolean("allow_session", true)) b.addAction(approveAction(e, "session", "Allow session"));
-        b.addAction(approveAction(e, "deny", "Deny"));
-        nm.cancel(tag("approval", session), 2); // a fresh post is what re-triggers the heads-up
-        postGrouped(nm, tag("approval", session), b.build());
+        if (headsUp) nm.cancel(approvalTag(entry), 2);
+        postGrouped(nm, approvalTag(entry), builder.build());
     }
 
     /** Ticks the approval countdown once a second until answered or expired. */
     void tickApproval() {
         synchronized (this) {
-            if (pendingApproval == null) return;
-            // HyperOS drops the heads-up after ~5 s: pop it up again at 20 s and 40 s while unanswered.
-            long elapsed = Math.max(1, pendingApproval.optLong("timeout", 60)) * 1000L - (approvalDeadline - System.currentTimeMillis());
-            long sec = elapsed / 1000;
-            if ((sec == 20 || sec == 40) && sec != lastReAlert && !MainActivity.visible) {
-                lastReAlert = sec;
-                reAlertApproval();
+            if (approvals.isEmpty()) return;
+            NotificationManager nm = getSystemService(NotificationManager.class);
+            for (ApprovalQueue.Entry<JSONObject> stale : approvals.removeStale(System.currentTimeMillis())) {
+                String gone = approvalTag(stale);
+                nm.cancel(gone, 2);
+                dropEmptySummary(nm, gone);
             }
-            if (System.currentTimeMillis() > approvalDeadline + 3000) {
-                pendingApproval = null; // expired; the plugin's clear normally beats this
-                postStatus();
-                updateWake();
-                return;
-            }
+            for (ApprovalQueue.Entry<JSONObject> entry : approvals.snapshot()) postApprovalNotification(entry, false);
             postStatus();
+            updateWake();
+            notifyPageNeedChanged();
+            if (approvals.isEmpty()) return;
         }
         main.postDelayed(this::tickApproval, 1000);
     }
@@ -763,51 +810,78 @@ public class HermesService extends Service {
 
     PendingIntent approveIntent(JSONObject e, String choice) {
         String session = e.optString("session", "");
+        String requestId = e.optString("request_id", "");
+        String command = e.optString("command", "");
         Intent i = new Intent(this, HermesService.class).setAction(ACTION_APPROVE)
                 .putExtra("session", session)
                 .putExtra("key", e.optString("key", ""))
-                .putExtra("request_id", e.optString("request_id", ""))
+                .putExtra("request_id", requestId)
+                .putExtra("command", command)
                 .putExtra("profile", e.optString("profile", ""))
                 .putExtra("choice", choice);
-        return PendingIntent.getService(this, (session + choice).hashCode(), i,
+        return PendingIntent.getService(this, (session + "|" + requestId + "|" + choice).hashCode(), i,
                 PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
     }
 
     /** A notification button's answer: POST it to the plugin's /approve (approval.respond). */
     void answerApproval(Intent i) {
-        String session = i.getStringExtra("session");
-        String choice = i.getStringExtra("choice");
-        String t = tag("approval", session);
-        NotificationManager nm = getSystemService(NotificationManager.class);
+        final String session = i.getStringExtra("session");
+        final String choice = i.getStringExtra("choice");
+        final String requestId = i.getStringExtra("request_id");
+        final String command = i.getStringExtra("command");
+        final String requestKey = (session == null ? "" : session) + "|"
+                + (requestId == null || requestId.isEmpty() ? (command == null ? "" : command) : requestId);
+        final String t = approvalTag(session, requestId, command);
+        final NotificationManager nm = getSystemService(NotificationManager.class);
+        synchronized (this) {
+            if (approvalInFlight.contains(requestKey)) return;
+            approvalInFlight.add(requestKey);
+        }
         new Thread(() -> {
             String err = null;
+            boolean sent = false;
             try {
                 JSONObject body = new JSONObject()
                         .put("session", session)
                         .put("key", i.getStringExtra("key"))
                         .put("choice", choice)
-                        .put("request_id", i.getStringExtra("request_id"))
+                        .put("request_id", requestId)
                         .put("profile", i.getStringExtra("profile"));
                 String path = "/api/plugins/hermes-mobile/approve";
-                String[] res = MainActivity.rawHttp("POST", path, dashboardToken(false), body.toString());
+                String[] res;
+                try {
+                    res = MainActivity.rawHttp("POST", path, dashboardToken(false), body.toString());
+                } catch (Exception first) {
+                    Thread.sleep(1500);
+                    res = MainActivity.rawHttp("POST", path, dashboardToken(false), body.toString());
+                }
                 if ("401".equals(res[0]) || "403".equals(res[0]))
                     res = MainActivity.rawHttp("POST", path, dashboardToken(true), body.toString());
-                if (!res[0].startsWith("2")) err = "HTTP " + res[0];
+                sent = res[0].startsWith("2") || "404".equals(res[0]) || "409".equals(res[0]);
+                if (!sent) err = "HTTP " + res[0];
             } catch (Exception ex) {
-                err = ex.getMessage();
+                err = ex.getMessage() == null ? "connection error" : ex.getMessage();
             }
             final String failed = err;
+            final boolean accepted = sent;
+            if (accepted) {
+                synchronized (HermesService.this) {
+                    approvals.removeAnswered(session, requestId, command, System.currentTimeMillis());
+                }
+            }
             main.post(() -> {
-                if (failed == null) {
+                synchronized (HermesService.this) { approvalInFlight.remove(requestKey); }
+                if (accepted) {
                     synchronized (HermesService.this) {
-                        pendingApproval = null;
                         postStatus();
+                        updateWake();
+                        notifyPageNeedChanged();
                     }
                     nm.cancel(t, 2);
                     dropEmptySummary(nm, t);
                 } else {
-                    postGrouped(nm, t, alert(CH_ALERT, "Couldn't send your answer",
-                            "Open Hermes to answer (" + failed + ")", session, true));
+                    postGrouped(nm, tag("approval-error", requestKey), alert(CH_ALERT, "Couldn't send your answer",
+                            "Open Hermes to answer" + (failed == null ? "" : " (" + failed + ")"), session, true));
                 }
             });
         }, "hermes-approve").start();
@@ -841,6 +915,7 @@ public class HermesService extends Service {
             pendingAsk = null; // answered (or it failed and says so): the chip goes back to the status
             main.removeCallbacks(expireAskTask);
             postStatus();
+            notifyPageNeedChanged();
         }
         if (text.isEmpty()) {
             nm.cancel(t, 2);
@@ -873,9 +948,6 @@ public class HermesService extends Service {
     }
 
     String dashToken = "";
-    /** The approval waiting for an answer: its buttons ride on the island chip. */
-    JSONObject pendingApproval;
-
     synchronized String dashboardToken(boolean refresh) {
         if (refresh || dashToken.isEmpty()) {
             String html = MainActivity.httpGet(MainActivity.BASE_URL + "/");

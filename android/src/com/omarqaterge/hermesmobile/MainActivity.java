@@ -75,6 +75,10 @@ public class MainActivity extends Activity {
     boolean pageReady = false;
     FrameLayout root;
     final Handler handler = new Handler(Looper.getMainLooper());
+    long pageHoldUntil = 0;
+    long hiddenAt = 0;
+    boolean pageHeldVisible = false;
+    final Runnable keepAliveLoop = this::keepAliveTick;
 
     @Override
     protected void onCreate(Bundle state) {
@@ -510,25 +514,59 @@ public class MainActivity extends Activity {
             done.accept(false);
             return;
         }
-        wakePage(30_000);
+        holdPage(30_000);
         String js = "window.hermesAnswer ? window.hermesAnswer(" + JSONObject.quote(kind) + "," + JSONObject.quote(session == null ? "" : session)
                 + "," + JSONObject.quote(text) + ") : 'n'";
         web.evaluateJavascript(js, v -> done.accept("\"y\"".equals(v)));
     }
 
-    /** About a minute after the app is hidden, Chromium freezes the page: no timers, network or socket events
-     *  until it is shown again, so an answer typed into a notification would sit there. Tell the WebView its
-     *  window is visible for a while (that unfreezes the page), then let it sleep again. */
-    void wakePage(long ms) {
-        if (visible) return;
-        web.dispatchWindowVisibilityChanged(View.VISIBLE);
-        handler.removeCallbacks(sleepPage);
-        handler.postDelayed(sleepPage, ms);
+    void holdPage(long ms) {
+        pageHoldUntil = Math.max(pageHoldUntil, System.currentTimeMillis() + Math.max(0, ms));
+        ensureKeepAlive();
     }
 
-    final Runnable sleepPage = () -> {
-        if (!visible) web.dispatchWindowVisibilityChanged(View.GONE);
-    };
+    void wakePage(long ms) {
+        holdPage(ms);
+    }
+
+    void ensureKeepAlive() {
+        handler.removeCallbacks(keepAliveLoop);
+        if (visible || web == null) {
+            pageHeldVisible = false;
+            return;
+        }
+        long now = System.currentTimeMillis();
+        long delay = KeepAlivePolicy.nextDelay(now, hiddenAt, pageHoldUntil,
+                HermesService.needsPage(), pageHeldVisible);
+        if (delay < 0) {
+            if (pageHeldVisible) web.dispatchWindowVisibilityChanged(View.GONE);
+            pageHeldVisible = false;
+            return;
+        }
+        if (delay == 0) {
+            web.dispatchWindowVisibilityChanged(View.VISIBLE);
+            pageHeldVisible = true;
+            delay = 15_000;
+        }
+        handler.postDelayed(keepAliveLoop, delay);
+    }
+
+    void keepAliveTick() {
+        handler.removeCallbacks(keepAliveLoop);
+        if (visible || web == null) {
+            pageHeldVisible = false;
+            return;
+        }
+        long now = System.currentTimeMillis();
+        if (now >= pageHoldUntil && !HermesService.needsPage()) {
+            if (pageHeldVisible) web.dispatchWindowVisibilityChanged(View.GONE);
+            pageHeldVisible = false;
+            return;
+        }
+        web.dispatchWindowVisibilityChanged(View.VISIBLE);
+        pageHeldVisible = true;
+        handler.postDelayed(keepAliveLoop, 15_000);
+    }
 
     String token(boolean refresh) {
         if (refresh || cachedToken.isEmpty()) {
@@ -731,12 +769,10 @@ public class MainActivity extends Activity {
         super.onResume();
         foreground = true;
         visible = true;
-        handler.removeCallbacks(sleepPage);
+        handler.removeCallbacks(keepAliveLoop);
+        pageHeldVisible = false;
         if (!HermesService.running) HermesService.start(this);
-        // Pinned approval popups: the in-app sheet takes over, so none can be left stuck.
-        NotificationManager nm = getSystemService(NotificationManager.class);
-        for (android.service.notification.StatusBarNotification n : nm.getActiveNotifications())
-            if (n.getId() == 2 && n.getTag() != null && n.getTag().startsWith("approval:")) nm.cancel(n.getTag(), 2);
+        HermesService.appVisibility(true);
         web.evaluateJavascript("window.hermesResume && window.hermesResume()", null);
     }
 
@@ -763,6 +799,9 @@ public class MainActivity extends Activity {
     protected void onPause() {
         foreground = false;
         visible = false;
+        hiddenAt = System.currentTimeMillis();
+        HermesService.appVisibility(false);
+        ensureKeepAlive();
         voice.stopListening(); // never leave the microphone open in the background
         super.onPause();
     }
@@ -846,6 +885,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         if (current == this) current = null;
+        handler.removeCallbacks(keepAliveLoop);
         voice.destroy();
         super.onDestroy();
     }

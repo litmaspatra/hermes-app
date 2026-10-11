@@ -2,6 +2,7 @@ import './secure-bridge' // first: takes the native bridge key before anything e
 import { createRoot } from 'react-dom/client'
 import { App } from './App'
 import './share'
+import './island'
 import './notif-answer'
 import './styles.css'
 import 'highlight.js/styles/github-dark.css'

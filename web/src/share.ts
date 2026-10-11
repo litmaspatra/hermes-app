@@ -12,14 +12,14 @@ declare global {
   }
 }
 
-function toFile(b64: string, name: string, mime: string): File {
+export function toFile(b64: string, name: string, mime: string): File {
   const bin = atob(b64)
   const bytes = new Uint8Array(bin.length)
   for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
   return new File([bytes], name, { type: mime })
 }
 
-async function whenOnline(ms: number): Promise<boolean> {
+export async function whenOnline(ms: number): Promise<boolean> {
   const end = Date.now() + ms
   while (getState().conn !== 'open') {
     if (Date.now() > end) return false

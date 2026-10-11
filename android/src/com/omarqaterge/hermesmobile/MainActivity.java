@@ -18,6 +18,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.provider.Settings;
 import android.view.HapticFeedbackConstants;
 import android.view.View;
 import android.view.WindowInsets;
@@ -70,6 +71,17 @@ public class MainActivity extends Activity {
     static volatile MainActivity current;
     /** "Share to Hermes": files another app shared, read on demand by the page (Bridge.sharedItem). */
     final java.util.List<Uri> sharedUris = new java.util.ArrayList<>();
+    static final class IslandPayload {
+        final String text;
+        final java.util.List<Uri> uris;
+        final java.util.function.Consumer<Boolean> done;
+        IslandPayload(String text, java.util.List<Uri> uris, java.util.function.Consumer<Boolean> done) {
+            this.text = text;
+            this.uris = new java.util.ArrayList<>(uris);
+            this.done = done;
+        }
+    }
+    static IslandPayload pendingIsland;
     String pendingShareText = null;
     boolean shareWaiting = false;
     boolean pageReady = false;
@@ -129,6 +141,7 @@ public class MainActivity extends Activity {
                 pageReady = true;
                 openPendingSession();
                 deliverShare();
+                deliverPendingIsland();
                 deliverShortcut();
             }
 
@@ -183,6 +196,30 @@ public class MainActivity extends Activity {
         requestRuntimePermissions();
         startHermes(); // no-op if already running; the supervisor script is idempotent
         web.loadUrl("file:///android_asset/www/index.html");
+    }
+
+    /** The island can submit while the activity is absent. Keep one payload in-process and wake the page. */
+    static void deliverIsland(Context context, String text, java.util.List<Uri> uris,
+                              java.util.function.Consumer<Boolean> done) {
+        synchronized (MainActivity.class) {
+            if (pendingIsland != null) pendingIsland.done.accept(false);
+            pendingIsland = new IslandPayload(text, uris, done);
+        }
+        MainActivity activity = current;
+        if (activity != null) {
+            activity.runOnUiThread(activity::deliverPendingIsland);
+            return;
+        }
+        try {
+            Intent open = new Intent(context, MainActivity.class)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_NO_ANIMATION)
+                    .putExtra("island", true);
+            context.startActivity(open);
+        } catch (Exception e) {
+            IslandPayload failed;
+            synchronized (MainActivity.class) { failed = pendingIsland; pendingIsland = null; }
+            if (failed != null) failed.done.accept(false);
+        }
     }
 
     void requestRuntimePermissions() {
@@ -348,6 +385,7 @@ public class MainActivity extends Activity {
             openPendingSession();
         }
         if (takeShare(intent)) deliverShare();
+        if (intent.getBooleanExtra("island", false)) deliverPendingIsland();
         String sc = shortcutOf(intent);
         if (sc != null) {
             pendingShortcut = sc;
@@ -443,6 +481,40 @@ public class MainActivity extends Activity {
         String js = "window.hermesShared && window.hermesShared(" + sharedUris.size() + "," + JSONObject.quote(pendingShareText == null ? "" : pendingShareText) + ")";
         pendingShareText = null;
         web.evaluateJavascript(js, null);
+    }
+
+    void openOverlaySettings() {
+        try {
+            startActivity(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    Uri.parse("package:" + getPackageName())));
+        } catch (Exception ignored) {
+            startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                    Uri.parse("package:" + getPackageName())));
+        }
+    }
+
+    void deliverPendingIsland() {
+        if (!pageReady) return;
+        final IslandPayload payload;
+        synchronized (MainActivity.class) {
+            payload = pendingIsland;
+            pendingIsland = null;
+        }
+        if (payload == null) return;
+        sharedUris.clear();
+        sharedUris.addAll(payload.uris);
+        sharedType = null;
+        holdPage(90_000);
+        String js = "window.hermesIsland ? window.hermesIsland(" + sharedUris.size() + ","
+                + JSONObject.quote(payload.text) + ") : 'n'";
+        web.evaluateJavascript(js, value -> {
+            boolean accepted = "\"y\"".equals(value);
+            payload.done.accept(accepted);
+            if (getIntent().getBooleanExtra("island", false)) {
+                getIntent().removeExtra("island");
+                handler.postDelayed(() -> moveTaskToBack(true), 6000);
+            }
+        });
     }
 
     /** One shared file as {name, mime, b64} (≤ 20 MB), or {name, error}. */
@@ -773,6 +845,7 @@ public class MainActivity extends Activity {
         pageHeldVisible = false;
         if (!HermesService.running) HermesService.start(this);
         HermesService.appVisibility(true);
+        if (HermesService.instance != null) HermesService.instance.islandSettingsChanged();
         web.evaluateJavascript("window.hermesResume && window.hermesResume()", null);
     }
 
@@ -1260,6 +1333,63 @@ public class MainActivity extends Activity {
                 root.setBackgroundColor(c);
                 web.setBackgroundColor(c);
             });
+        }
+
+        @JavascriptInterface
+        public String islandSettings(String key) {
+            if (!ok(key)) return "{}";
+            JSONObject o = new JSONObject();
+            try {
+                android.content.SharedPreferences p = getSharedPreferences("hm", MODE_PRIVATE);
+                o.put("enabled", p.getBoolean("island_enabled", false));
+                o.put("visibility", p.getString("island_visibility", "demand"));
+                o.put("permission", Settings.canDrawOverlays(MainActivity.this));
+            } catch (Exception ignored) {}
+            return o.toString();
+        }
+
+        @JavascriptInterface
+        public void setIslandEnabled(String key, boolean enabled) {
+            if (!ok(key)) return;
+            getSharedPreferences("hm", MODE_PRIVATE).edit().putBoolean("island_enabled", enabled).apply();
+            runOnUiThread(() -> {
+                if (HermesService.instance != null) HermesService.instance.islandSettingsChanged();
+                if (!enabled || Settings.canDrawOverlays(MainActivity.this)) return;
+                android.content.SharedPreferences p = getSharedPreferences("hm", MODE_PRIVATE);
+                Runnable open = () -> openOverlaySettings();
+                if (!p.getBoolean("island_explained", false)) {
+                    p.edit().putBoolean("island_explained", true).apply();
+                    new android.app.AlertDialog.Builder(MainActivity.this)
+                            .setTitle("Show the Hermes island")
+                            .setMessage("Android needs permission to draw the pet, approvals and drop target over other apps. The idle drop strip is transparent but intercepts touches in a 120 × 20 dp area at the top centre.")
+                            .setNegativeButton("Not now", null)
+                            .setPositiveButton("Open settings", (dialog, which) -> open.run())
+                            .show();
+                } else open.run();
+            });
+        }
+
+        @JavascriptInterface
+        public void setIslandVisibility(String key, String visibility) {
+            if (!ok(key)) return;
+            String value = "always".equals(visibility) ? "always" : "demand";
+            getSharedPreferences("hm", MODE_PRIVATE).edit().putString("island_visibility", value).apply();
+            if (HermesService.instance != null) HermesService.instance.islandSettingsChanged();
+        }
+
+        @JavascriptInterface
+        public void openOverlayPermission(String key) {
+            if (!ok(key)) return;
+            runOnUiThread(MainActivity.this::openOverlaySettings);
+        }
+
+        @JavascriptInterface
+        public void islandFailed(String key, String text) {
+            if (!ok(key)) return;
+            String draft = text == null ? "" : text;
+            if (draft.length() > 20_000) draft = draft.substring(0, 20_000);
+            final String safe = draft;
+            if (HermesService.instance != null) HermesService.instance.postIslandFailure(safe);
         }
 
         /** Is the phone in dark mode? (The "System" theme follows it.) */

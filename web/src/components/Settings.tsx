@@ -774,10 +774,71 @@ function AppearancePage() {
   )
 }
 
+type IslandSettings = { enabled: boolean; visibility: 'demand' | 'always'; permission: boolean }
+
+function readIslandSettings(): IslandSettings {
+  try {
+    const raw = window.HermesAndroid?.islandSettings?.()
+    const value = raw ? (JSON.parse(raw) as Partial<IslandSettings>) : {}
+    return { enabled: Boolean(value.enabled), visibility: value.visibility === 'always' ? 'always' : 'demand', permission: Boolean(value.permission) }
+  } catch {
+    return { enabled: false, visibility: 'demand', permission: false }
+  }
+}
+
+function IslandPage() {
+  const [settings, setSettings] = useState(readIslandSettings)
+  useEffect(() => {
+    const refresh = () => document.visibilityState === 'visible' && setSettings(readIslandSettings())
+    document.addEventListener('visibilitychange', refresh)
+    return () => document.removeEventListener('visibilitychange', refresh)
+  }, [])
+  const supported = Boolean(window.HermesAndroid?.islandSettings)
+  return (
+    <Section
+      title="Island"
+      footer="On demand keeps a transparent, touchable 120 × 20 dp drop strip at the top centre while idle. It draws nothing, but intercepts touches in that small area."
+    >
+      <ToggleRow
+        icon="🐱"
+        tone="gold"
+        title="Enable island"
+        sub={supported ? 'Pet, approvals and drag-and-drop over other apps' : 'Available in the Android app'}
+        on={settings.enabled}
+        onChange={enabled => {
+          if (!supported) return
+          window.HermesAndroid?.setIslandEnabled?.(enabled)
+          setSettings(s => ({ ...s, enabled }))
+        }}
+      />
+      <SelectRow
+        icon="◉"
+        tone="purple"
+        title="Island visibility"
+        options={[{ value: 'demand', label: 'On demand' }, { value: 'always', label: 'Always' }]}
+        value={settings.visibility}
+        onChange={visibility => {
+          const value = visibility === 'always' ? 'always' : 'demand'
+          window.HermesAndroid?.setIslandVisibility?.(value)
+          setSettings(s => ({ ...s, visibility: value }))
+        }}
+      />
+      <Row
+        icon={settings.permission ? '✓' : '!'}
+        tone={settings.permission ? 'green' : 'gold'}
+        title="Overlay permission"
+        value={settings.permission ? 'Allowed' : 'Needed'}
+        chevron={!settings.permission && supported}
+        onClick={!settings.permission && supported ? () => window.HermesAndroid?.openOverlayPermission?.() : undefined}
+      />
+    </Section>
+  )
+}
+
 // ── screen: a hub of grouped rows, each opening its own page ─
 
-type Page = 'hub' | 'appearance' | 'voice' | 'models' | 'accounts' | 'keys' | 'config'
-const PAGE_TITLE: Record<Page, string> = { hub: 'Settings', appearance: 'Appearance', voice: 'Voice', models: 'Default models', accounts: 'Subscriptions & accounts', keys: 'API keys', config: 'Advanced settings' }
+type Page = 'hub' | 'appearance' | 'island' | 'voice' | 'models' | 'accounts' | 'keys' | 'config'
+const PAGE_TITLE: Record<Page, string> = { hub: 'Settings', appearance: 'Appearance', island: 'Island', voice: 'Voice', models: 'Default models', accounts: 'Subscriptions & accounts', keys: 'API keys', config: 'Advanced settings' }
 
 function Hub({ go }: { go: (p: Page) => void }) {
   const conn = useStore(s => s.conn)
@@ -790,6 +851,7 @@ function Hub({ go }: { go: (p: Page) => void }) {
     <>
       <Section title="Appearance">
         <Row icon="🎨" tone="purple" title="Appearance" sub="Theme and text size" value={THEME_NAME[theme]} chevron onClick={() => go('appearance')} />
+        <Row icon="🐱" tone="gold" title="Island" sub="Pet, approvals and drop target" chevron onClick={() => go('island')} />
       </Section>
       <Section title="Voice">
         <ToggleRow icon="🔊" tone="gold" title="Read every reply aloud" sub="In all chats" on={autoRead} onChange={v => { setAutoReadState(v); setAutoRead(v) }} />
@@ -872,6 +934,7 @@ export function SettingsScreen() {
     <ScreenShell title={PAGE_TITLE[page]} onBack={page === 'hub' ? undefined : () => setPage('hub')}>
       {page === 'hub' && <Hub go={setPage} />}
       {page === 'appearance' && <AppearancePage />}
+      {page === 'island' && <IslandPage />}
       {page === 'voice' && <VoiceSettings />}
       {page === 'models' && <ModelsTab />}
       {page === 'accounts' && (

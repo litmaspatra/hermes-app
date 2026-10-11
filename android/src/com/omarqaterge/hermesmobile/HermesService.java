@@ -82,6 +82,9 @@ public class HermesService extends Service {
     final Handler main = new Handler(Looper.getMainLooper());
     final ApprovalQueue<JSONObject> approvals = new ApprovalQueue<>();
     final java.util.Set<String> approvalInFlight = new java.util.HashSet<>();
+    IslandOverlay island;
+    long errorUntil = 0;
+    long learningUntil = 0;
 
     static void start(Context ctx) {
         try {
@@ -105,6 +108,7 @@ public class HermesService extends Service {
         if (!visible) {
             for (ApprovalQueue.Entry<JSONObject> entry : approvals.snapshot()) postApprovalNotification(entry, true);
         }
+        updateIsland();
         notifyPageNeedChanged();
     }
 
@@ -121,6 +125,8 @@ public class HermesService extends Service {
         startForeground(STATUS_ID, statusNotification("Ready", null, false), ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
         running = true;
         instance = this;
+        island = new IslandOverlay(this);
+        updateIsland();
         new Thread(this::serve, "hermes-events").start();
         rearmWake();
     }
@@ -243,6 +249,7 @@ public class HermesService extends Service {
     public void onDestroy() {
         running = false;
         instance = null;
+        if (island != null) island.destroy();
         if (voice != null) voice.destroy();
         if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
         try {
@@ -440,6 +447,11 @@ public class HermesService extends Service {
             }
             case "reply":
             case "error":
+                if ("error".equals(kind)) {
+                    errorUntil = System.currentTimeMillis() + 8000;
+                    postStatus();
+                    main.postDelayed(this::postStatus, 8100);
+                }
                 if (MainActivity.visible) return;
                 Notification.Builder rb = alertBuilder(CH_REPLY, title, body, session, false);
                 if (session != null && !session.isEmpty()) rb.addAction(answerAction("reply", session, "Reply", null));
@@ -447,6 +459,7 @@ public class HermesService extends Service {
                 if ("reply".equals(kind)) readAloud(e, session);
                 return;
             case "learning":
+                learningUntil = System.currentTimeMillis() + FLASH_MS;
                 flashChip = title.startsWith("Skill") ? "🧩 Skill" : "🧠 Memory";
                 flashTitle = title;
                 flashBody = body;
@@ -501,6 +514,55 @@ public class HermesService extends Service {
 
     void postStatus() {
         getSystemService(NotificationManager.class).notify(STATUS_ID, statusNotification(lastStatus, lastSub, lastWorking));
+        updateIsland();
+    }
+
+    synchronized void updateIsland() {
+        if (island == null) return;
+        long now = System.currentTimeMillis();
+        java.util.ArrayList<IslandOverlay.Approval> waiting = new java.util.ArrayList<>();
+        for (ApprovalQueue.Entry<JSONObject> entry : approvals.snapshot()) {
+            try { waiting.add(new IslandOverlay.Approval(new JSONObject(entry.value.toString()), entry.deadline)); }
+            catch (Exception ignored) {}
+        }
+        String theme = getSharedPreferences("hm", MODE_PRIVATE).getString("theme", "material");
+        island.update(new IslandOverlay.State(MainActivity.visible, lastWorking, pendingAsk != null,
+                learningUntil > now, flashUntil > now && learningUntil <= now, errorUntil > now,
+                lastStatus, theme, waiting));
+    }
+
+    void islandSettingsChanged() {
+        if (island != null) island.settingsChanged();
+    }
+
+    void answerApproval(JSONObject event, String choice) {
+        Intent i = new Intent(this, HermesService.class).setAction(ACTION_APPROVE)
+                .putExtra("session", event.optString("session", ""))
+                .putExtra("key", event.optString("key", ""))
+                .putExtra("request_id", event.optString("request_id", ""))
+                .putExtra("command", event.optString("command", ""))
+                .putExtra("profile", event.optString("profile", ""))
+                .putExtra("choice", choice);
+        answerApproval(i);
+    }
+
+    void islandSubmit(String text, java.util.List<android.net.Uri> uris) {
+        MainActivity.deliverIsland(this, text, uris, ok -> {
+            if (!ok) postIslandFailure(text);
+        });
+    }
+
+    void postIslandFailure(String text) {
+        String draft = text == null ? "" : text;
+        if (draft.length() > 20_000) draft = draft.substring(0, 20_000);
+        Intent open = new Intent(this, MainActivity.class)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                .putExtra("draft", draft);
+        PendingIntent pi = PendingIntent.getActivity(this, ("island:" + draft).hashCode(), open,
+                PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+        Notification.Builder b = alertBuilder(CH_ALERT, "Couldn't send to Hermes",
+                "Tap to open the chat; your text is in the box.", null, false).setContentIntent(pi);
+        postGrouped(getSystemService(NotificationManager.class), tag("island", String.valueOf(System.currentTimeMillis())), b.build());
     }
 
     /** One collapsed stack for every Hermes notification (replies, approvals, learning, jobs). */
@@ -536,6 +598,16 @@ public class HermesService extends Service {
     }
 
     Notification statusNotification(String text, String sub, boolean working) {
+        boolean error = errorUntil > System.currentTimeMillis();
+        if (error && approvals.isEmpty() && pendingAsk == null) {
+            Notification.Builder sad = new Notification.Builder(this, CH_STATUS)
+                    .setSmallIcon(R.drawable.ic_stat_hermes).setColor(RED)
+                    .setContentTitle("Hermes hit an error").setContentText(text)
+                    .setOngoing(true).setOnlyAlertOnce(true).setShowWhen(false)
+                    .setContentIntent(openApp(lastSession));
+            promote(sad, "😿");
+            return sad.build();
+        }
         boolean flash = flashUntil > System.currentTimeMillis();
         if (flash && approvals.isEmpty() && pendingAsk == null) return flashNotification();
         if (!approvals.isEmpty()) return approvalNotification(sub);
@@ -564,7 +636,8 @@ public class HermesService extends Service {
                         .setProgressSegments(java.util.List.of(new Notification.ProgressStyle.Segment(100).setColor(GOLD))));
                 b.setContentText(codeSpans(text));
             }
-            promote(b, lastShort.isEmpty() ? "Hermes" : lastShort);
+            String lower = text == null ? "" : text.toLowerCase(java.util.Locale.ROOT);
+            promote(b, lower.startsWith("thinking") || lower.startsWith("working") || lower.startsWith("learning") ? "🐱💭" : "🐱🔧");
         }
         return b.build();
     }
@@ -653,7 +726,7 @@ public class HermesService extends Service {
                 b.addAction(answerAction("ask", session, "More\u2026", new java.util.ArrayList<CharSequence>(choices)));
             }
         }
-        promote(b, "Answer?");
+        promote(b, "🐱❓");
         return b.build();
     }
 
@@ -730,7 +803,7 @@ public class HermesService extends Service {
         if (a.optBoolean("allow_session", true))
             b.addAction(new Notification.Action.Builder(null, colored("Allow session", GOLD), approveIntent(a, "session")).build());
         b.addAction(new Notification.Action.Builder(null, colored("✕ Deny", RED), approveIntent(a, "deny")).build());
-        promote(b, secs + "s");
+        promote(b, secs > 0 ? "🙀 " + secs + "s" : "🙀 wait");
         return b.build();
     }
 
@@ -796,7 +869,7 @@ public class HermesService extends Service {
         Bundle extras = new Bundle();
         extras.putBoolean("android.requestPromotedOngoing", true);
         b.addExtras(extras);
-        if (Build.VERSION.SDK_INT >= 36) b.setShortCriticalText(flashChip);
+        if (Build.VERSION.SDK_INT >= 36) b.setShortCriticalText("😸");
         return b.build();
     }
 

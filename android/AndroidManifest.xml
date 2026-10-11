@@ -13,6 +13,7 @@
     <!-- Lets the app start Hermes inside Termux (needs allow-external-apps=true in Termux). -->
     <uses-permission android:name="com.termux.permission.RUN_COMMAND" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <!-- Battery: a partial wake lock only while Hermes works, and an alarm that wakes the phone for a due cron job. -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!-- Setup check: the "let it run in the background" prompt (ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS). -->

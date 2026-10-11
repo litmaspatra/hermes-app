@@ -32,6 +32,11 @@ interface AndroidBridge {
   setupState?(): string
   setupFix?(what: string): void
   signInTermux?(provider: string, profile: string): boolean
+  islandSettings?(): string
+  setIslandEnabled?(enabled: boolean): void
+  setIslandVisibility?(visibility: string): void
+  openOverlayPermission?(): void
+  islandFailed?(text: string): void
 }
 
 declare global {

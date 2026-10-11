@@ -4,9 +4,12 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-SDK="${ANDROID_HOME:-/opt/homebrew/share/android-commandlinetools}"
-JAVA_HOME="${JAVA_HOME:-/opt/homebrew/opt/openjdk@17}"
-export JAVA_HOME PATH="$JAVA_HOME/bin:$PATH"
+SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/opt/homebrew/share/android-commandlinetools}}"
+if [ -n "${JAVA_HOME:-}" ] && [ -d "$JAVA_HOME" ]; then
+  export JAVA_HOME PATH="$JAVA_HOME/bin:$PATH"
+else
+  unset JAVA_HOME
+fi
 PLATFORM=35          # targetSdk
 COMPILE_PLATFORM=36  # compile against Android 16 APIs (Live Updates)
 BT="$SDK/build-tools/35.0.0"
@@ -39,6 +42,7 @@ javac -encoding UTF-8 -source 11 -target 11 -Xlint:-options -classpath "$ANDROID
 ( cd build/dex && zip -q -j ../unsigned.apk classes.dex )
 
 # 4. align + sign
+mkdir -p "$(dirname "$KS")"
 [ -f "$KS" ] || keytool -genkeypair -keystore "$KS" -storepass hermesmobile -keypass hermesmobile \
   -alias hermes -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Hermes Mobile, O=omarqaterge" >/dev/null 2>&1
 "$BT/zipalign" -f -p 4 build/unsigned.apk build/aligned.apk

@@ -5,10 +5,15 @@
 set -euo pipefail
 cd "$(dirname "$0")/../android"
 CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/hermes-mobile"
+SDK_JAR="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}/platforms/android-36/android.jar"
 JAR="$CACHE/android-all-16.jar"
-mkdir -p "$CACHE"
-[ -s "$JAR" ] || curl -sSfL -o "$JAR" \
-  https://repo1.maven.org/maven2/org/robolectric/android-all/16-robolectric-13921718/android-all-16-robolectric-13921718.jar
+if [ -n "${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}" ] && [ -s "$SDK_JAR" ]; then
+  JAR="$SDK_JAR"
+else
+  mkdir -p "$CACHE"
+  [ -s "$JAR" ] || curl -sSfL -o "$JAR" \
+    https://repo1.maven.org/maven2/org/robolectric/android-all/16-robolectric-13921718/android-all-16-robolectric-13921718.jar
+fi
 OUT=$(mktemp -d); trap 'rm -rf "$OUT"' EXIT
 mkdir -p "$OUT/gen/com/omarqaterge/hermesmobile" "$OUT/classes"
 {

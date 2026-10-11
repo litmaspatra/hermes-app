@@ -1,0 +1,54 @@
+name: Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/v2
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Install web dependencies
+        working-directory: web
+        run: npm ci
+      - name: Install Android SDK packages
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-36" "build-tools;35.0.0"
+      - name: Restore signing key
+        env:
+          KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/hermes-mobile.keystore"
+            echo "KEYSTORE=$RUNNER_TEMP/hermes-mobile.keystore" >> "$GITHUB_ENV"
+          fi
+      - name: Test web UI
+        working-directory: web
+        run: |
+          npm test
+          npm run build
+      - name: Compile-check Android Java
+        run: tools/java-check.sh
+      - name: Test pure Java policy and commands
+        run: tools/java-unit-tests.sh
+      - name: Build signed APK
+        run: android/build.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hermes-mobile-apk
+          path: android/build/hermes-mobile.apk
+          retention-days: 14
+          if-no-files-found: error
